@@ -10,7 +10,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 |---|---|---|---|---|
 | [lab_scale / Node-1](lab_scale/Node-1/README.md) | shrimp-node01；ESP32-S3 N16R8；DFRobot SEN0681 DO + SEN0709 ORP | 192.168.88.252（此前日志，待现场复核） | 两路独立 RS485 读取成功；Wi-Fi 已连接；4 s 请求周期 | 校准/验证、UTC、MQTT、长期稳定性 |
 | [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251（用户 2026-09-22 确认） | 两路 UART 回复、读取成功；Wi-Fi 已连接；4 s 请求周期 | K10 配置不匹配、校准、温度补偿、UTC、MQTT |
-| [lab_scale / camera_node](lab_scale/camera_node/README.md) | 用户提供的水下 PoE IP 相机 | NOT VERIFIED | 已接 PoE 网络（用户报告） | 精确型号、IP、视频流、录像验证 |
+| [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 5MP 304 水下相机 + TP-Link/Omada POE150S（商品资料） | NOT VERIFIED | 已接 PoE 网络（用户报告）；已补充规格来源 | 实物版本、IP、视频流、录像验证；淡水款不批准目标盐度长期部署 |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
 
 这些 IP 是记录值，不是固件固定 IP；DHCP 重启后可能变化。Wi-Fi 已连接不等于数据已经通过网络发送。

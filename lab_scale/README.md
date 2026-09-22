@@ -10,7 +10,7 @@
 | [Node-2](Node-2/README.md) | shrimp-node02 | Atlas EC K10、Industrial pH No Temp，分别经 EZO/ISCCB-2 | 192.168.88.251；用户本次确认 |
 | [camera_node](camera_node/README.md) | NOT VERIFIED；目录名不是设备 hostname | 水下 PoE 相机 | NOT VERIFIED |
 
-路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。两节点通过 Wi-Fi，相机通过有线 PoE 路径（具体注入器/交换机型号未确认）。没有上游互联网时仍可进行局域网通信，但当前固件没有 UTC 来源或测量网络接口。
+路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。两节点通过 Wi-Fi，相机通过有线 PoE 路径；用户已提供 TP-Link/Omada POE150S 注入器链接，实物版本待核对。Barlus 304 相机商品标明淡水用途，不批准目标盐度下长期部署；详见 camera_node/HARDWARE.md。没有上游互联网时仍可进行局域网通信，但当前固件没有 UTC 来源或测量网络接口。
 未配置固定地址；不要仅凭旧 IP 判断设备身份，也不要把摄像机 IP 猜成空闲地址。
 
 ## 2. 已完成与边界
