@@ -1,0 +1,16 @@
+{
+  "python.defaultInterpreterPath": "/usr/bin/python3",
+  "python.testing.unittestEnabled": true,
+  "python.testing.pytestEnabled": false,
+  "python.testing.cwd": "${workspaceFolder}/lab_scale/jetson_web",
+  "python.testing.unittestArgs": [
+    "-v",
+    "-s",
+    ".",
+    "-p",
+    "test_*.py"
+  ],
+  "files.watcherExclude": {
+    "**/lab_scale/jetson_web/data/**": true
+  }
+}

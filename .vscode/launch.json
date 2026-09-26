@@ -1,0 +1,48 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Jetson 网页：本机调试",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "/usr/bin/python3",
+      "program": "${workspaceFolder}/lab_scale/jetson_web/server.py",
+      "cwd": "${workspaceFolder}/lab_scale/jetson_web",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "args": [
+        "--bind",
+        "127.0.0.1",
+        "--port",
+        "8081",
+        "--ingest-port",
+        "8767",
+        "--interface",
+        "enP8p1s0",
+        "--db",
+        "${workspaceFolder}/lab_scale/jetson_web/data/debug/measurements.sqlite3"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1",
+        "CAMERA_RTSP_URI": "",
+        "TANK_ID": "",
+        "EXPERIMENT_ID": "",
+        "SENSOR_LOCATION": ""
+      }
+    },
+    {
+      "name": "Jetson 网页：调试单元测试",
+      "type": "debugpy",
+      "request": "launch",
+      "python": "/usr/bin/python3",
+      "module": "unittest",
+      "args": [
+        "-v",
+        "test_server"
+      ],
+      "cwd": "${workspaceFolder}/lab_scale/jetson_web",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
