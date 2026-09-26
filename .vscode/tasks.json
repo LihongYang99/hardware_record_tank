@@ -1,0 +1,19 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "MQTT：接收至网页调试数据库",
+      "type": "process",
+      "command": "/usr/bin/python3",
+      "args": [
+        "${workspaceFolder}/lab_scale/jetson_web/run_mqtt.py",
+        "--db",
+        "${workspaceFolder}/lab_scale/jetson_web/data/debug/measurements.sqlite3"
+      ],
+      "options": {
+        "cwd": "${workspaceFolder}/lab_scale/jetson_web"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -23,3 +23,12 @@ node_id=shrimp-node01 boot_id=ee512acae3de7398 sensor=DO_SEN0681 seq=6 request_u
 
 首次行的 node_id 开头在聊天拷贝时缺少两个字符，此处按同一批完整后续行恢复；其余字段照录。不把后续恢复事件与这个旧 boot_id 合并成一次连续实验。
 最新给出的 DHCP 地址为 192.168.88.252，未配置固定租约的证据。
+
+## 2026-09-26 Jetson USB 核对与 MQTT 准备
+
+- 本机识别 `/dev/ttyACM0`，USB by-id 包含 `44:B1:76:CE:D1:A8`，与 Node 1 对应。用户添加 dialout 权限并重启后，被动读取串口成功。
+- 本次串口完整末轮：DO 7.575 mg/L、饱和度 102.31%、DO 温度 21.38°C；ORP 282 mV、ORP 温度 23.2°C。均仍为 UNVALIDATED、UTC UNSYNCED。开头出现拼接日志及 MISSED_POLL_CYCLES，不能把该片段作为完整测量。
+- 新增独立 DO_ORP_MQTT 版本，原读取参数/协议保留；USB 整行缓冲、网络独立任务、有限 RAM 队列、应用落库 ACK、重试及溢出计数。
+- 模板凭据编译通过（ESP32 core 3.3.11 / MQTT 2.5.2）。12 项网页/MQTT 测试和 C++ 协议回归通过，测试使用临时 broker/数据库。
+- Jetson 临时 broker/接收器已在本次会话前台启动，绑定 127.0.0.1 与 192.168.88.249:1883；重启后须按运行说明重新启动。配置和密码未入 Git。
+- 等待用户在 Jetson 本地填写实验室 Wi-Fi 配置。尚未编译真实凭据、回读备份或烧录，新代码不代表三节点已接通。Node 2 与相机未修改。

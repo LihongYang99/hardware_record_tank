@@ -303,8 +303,10 @@ def handler_for(store, camera, network, ingest_only=False):
                 if parsed.path == '/api/status':
                     latest, stats = store.latest()
                     for row in latest:
-                        row['stale'] = time.time() - row['received_epoch'] > 15
                         row['metadata'] = json.loads(row['metadata'])
+                        age = row['metadata'].get('transport_age_ms', '0')
+                        age_seconds = int(age) / 1000 if str(age).isdigit() else float('inf')
+                        row['stale'] = time.time() - row['received_epoch'] + age_seconds > 15
                     return self.send({'gateway_utc': utc(), 'latest': latest, 'stats': stats,
                                       'network': network.snapshot(), 'nodes': NODES, 'camera': camera.snapshot(),
                                       'metadata_configured': bool(os.getenv('TANK_ID') and os.getenv('EXPERIMENT_ID')),

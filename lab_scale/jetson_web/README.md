@@ -79,3 +79,32 @@ python3 -m unittest -v
 调试使用 `data/debug/measurements.sqlite3`，独立于 8080 的运行数据库。默认相机 URI 和实验标识清空，避免无意连接相机或写入真实实验。当前测试页面只在 Jetson 本机可见；若需另一台实验室电脑调试，将 launch.json 中 bind 改为现场核对后的实验室有线地址，并保持 8081/8767 独立端口。ESP32 固件的编译/烧录环境尚未配置，以上配置针对网页后端。
 
 调试配置参考：https://code.visualstudio.com/docs/python/debugging
+
+## 2026-09-26：Node 1 MQTT 接入准备
+
+新增 `Node-1/script/DO_ORP_MQTT/` 独立固件，原固件保留；板子尚未烧录。完整限制见该目录 README。UTC / 物理采集 / 断电缓存未宣称完成。
+
+本地 `.codex-build/runtime/` 解包 Ubuntu Mosquitto 2.0.11、Paho 1.5.1 及依赖；未安装系统服务、未启用开机启动。`data/mqtt/` 保存未跟踪的密码、ACL、broker 配置。配置只监听 loopback 与核对后的实验室有线 IP，不监听学校网；端口 1883，使用独立随机凭据与每节点 topic ACL。本实验 LAN 的 MQTT TCP 未加 TLS，正式安全部署另行设计。
+
+当前界面在 8081 使用调试数据库时，在 **Jetson 的另一个 VS Code 终端**运行：
+
+```bash
+cd ~/Documents/GitHub/hardware_record_tank/lab_scale/jetson_web
+python3 run_mqtt.py --db data/debug/measurements.sqlite3
+```
+
+也可选择 VS Code「Terminal → Run Task → MQTT：接收至网页调试数据库」。Ctrl+C 停止 broker 和接收器。若运行网页使用默认真实数据库，则接收器也使用默认 `python3 run_mqtt.py`；两个服务必须指向同一个 SQLite 文件，不能一边指向 debug 一边指向真实库。调试库尚未写入模拟数据；自动测试始终使用临时目录。
+
+接收器要求消息身份一致、无重复键、合法传输序号；不合格消息原文存 `mqtt_rejected` 且不发应用 ACK。合格消息在 `Store.ingest` 提交 SQLite 后发送应用 ACK。Paho 1.5.1 本身的 MQTT PUBACK 会早于 callback，所以不能把 MQTT PUBACK 当成落库确认；本项目明确使用第二层应用 ACK。记录重复时保留原日志，测量唯一键去重。
+
+`mqtt_status` 保存 broker 的 online/offline 状态及接收时间，目前页面仍主要按实际记录过期时间判断数据状态。`transport_age_ms` 计入 STALE 判定，buffered 不是正常实时读数；它不包括 broker 内等待时间，离线 UTC 与严格端到端采样年龄验证尚待完成。
+
+配置 Wi-Fi（只在本机终端输入密码，不写聊天）：
+
+```bash
+python3 configure_node1.py
+```
+
+自动测试：`python3 -m unittest discover -s lab_scale/jetson_web -v`（仓库根目录运行）。包含临时 broker、临时数据库、断开接收器后重连、ACK 必须在落库之后、写盘失败无 ACK、重复键/错节点拒绝、补发旧值 STALE 等。传感器解析使用既有 C++ 协议回归测试。
+
+协议依据：[Arduino MQTT](https://github.com/256dpi/arduino-mqtt)、[Mosquitto 配置](https://mosquitto.org/man/mosquitto-conf-5.html)。
