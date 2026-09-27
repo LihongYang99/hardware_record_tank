@@ -20,5 +20,6 @@
 - [WIRING.md](WIRING.md)：接线与供电边界。
 - [COMMUNICATION.md](COMMUNICATION.md)：通信参数与脚本行为。
 - [PROGRESS.md](PROGRESS.md)：调试进度、原始日志片段与待办。
+- [SAMPLE_LOG.md](SAMPLE_LOG.md)：真实原始输出样例与逐字段解释。
 - [script/](script/)：Arduino 程序；保留同名 sketch 子目录及全部头文件。
 - [tests/](tests/)：主机测试。
