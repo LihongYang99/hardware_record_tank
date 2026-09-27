@@ -2,6 +2,42 @@
 
 本目录是临时集成，不替代 SPEC 中 Raspberry Pi 正式网关。使用系统 Python 3 标准库（HTTP + SQLite）；相机可选使用系统 Python GI/GStreamer。无需 npm、pip 或云端资源。
 
+## 方法与原理
+
+### 方法：网关做了什么
+
+网关由三个进程组成，都在 Jetson 上运行：
+
+1. **Mosquitto broker**（由 `run_mqtt.py` 启动）。MQTT 消息中转站，监听 1883 端口。每个节点和接收器各有一个账号，ACL 规定 Node-1 只能写 `shrimp/lab/shrimp-node01/…`，Node-2 只能写自己的主题，接收器只能读节点主题、写 `ack` 主题。配置和密码由 `prepare_mqtt.py` 生成在私有的 `data/mqtt/`。
+2. **接收器 `mqtt_receiver.py`**（同样由 `run_mqtt.py` 启动）。订阅两个节点的 `records` 和 `status` 主题。每收到一行记录：
+   - 从**主题**判断是哪个节点（因为 ACL 保证节点只能写自己的主题），再核对记录里的 `node_id`、`boot_id`、`transport_seq` 等字段与主题一致；
+   - 不合格（身份冲突、重复键、序号非法、超长）就原文存进 `mqtt_rejected` 表，**不回 ACK**；
+   - 合格就交给 `server.py` 里的 `Store.ingest` 写 SQLite；事务提交后才向 `shrimp/lab/<节点>/ack` 发 `boot_id:transport_seq`。
+3. **网页服务 `server.py`**。提供中文页 `/`、英文页 `/en`、状态和历史 API、CSV 导出；后台线程把相机 RTSP 解码成 JPEG，另一线程检查节点网络状态。对局域网只读；另有一个只监听 `127.0.0.1:8766` 的 `POST /ingest` 供本机桥接程序使用。
+
+数据库是一个 SQLite 文件 `data/measurements.sqlite3`（WAL 模式），主要有四张表：
+
+| 表 | 存什么 |
+|---|---|
+| `raw_log` | 每一行收到的原文，附接收时间、节点、传输方式；健康、Wi-Fi、TX/RX 行也在这里 |
+| `measurement` | 从测量报告拆出的每个参数一行（DO、饱和度、温度……），含 `sample_timestamp_utc`（目前为空）、`received_utc`、`boot_id`、`sequence_number`、`value`、`qc_flag`，并以 (节点, 传感器, boot, 序号, 参数) 为唯一键 |
+| `issue` | 接收时观察到的序号缺口、重复、乱序、无法解析 |
+| `mqtt_rejected` / `mqtt_status` | 被拒收的原始消息及原因；各节点上线/离线状态 |
+
+网页判定规则：最后一条记录（加上传输延迟 `transport_age_ms`）超过 15 s 就显示 STALE；通信错误会清空当前值而不是沿用上一个正常值；`UNVALIDATED` 曲线用黄色；异常 QC 不画成正常曲线。
+
+### 原理：为什么这样设计
+
+- **身份来自主题 + ACL，而不是相信消息内容**。如果只看消息里的 `node_id`，任何一个节点（或局域网里任何设备）都能冒充别的节点。每个节点独立账号、只能写自己的主题，接收器再核对内容与主题一致，两层都过才算数。
+- **落库后再 ACK，而不是用 MQTT PUBACK**。Paho 库的 PUBACK 在回调之前就发出了，只代表 broker 收到；如果此时数据库写失败，节点已经删掉记录，数据就丢了。应用层 ACK 放在 SQLite 提交之后，写盘失败返回 503、不回 ACK，节点会重发。这一点有自动测试保证。
+- **原文和解析分开存**。`raw_log` 永远保留原文，`measurement` 是从中解析出来的。解析规则以后改了（例如加了 UTC 字段）可以重跑；解析失败的行也不丢，记进 `issue`。
+- **唯一键去重，但原文不去重**。节点重发同一条记录时，`measurement` 靠唯一键只保留一份，`raw_log` 照样多记一行，重复本身就是"曾经重发过"的证据。
+- **序号缺口是"接收时观察值"**。`issue` 记录的是收到那一刻看到的缺口；之后迟到的记录补进来不会抹掉这条 issue，这样能事后分析网络行为。
+- **采样 UTC 留空，不用接收时间冒充**。节点没有可信时钟，`sample_timestamp_utc` 就是 NULL、`clock_sync_status=UNSYNCED`；网页横轴明确写"网关接收时间"。将来固件同步了 UTC，也要升级解析并验证，而不是把标签改成 SYNCED 了事。
+- **STALE 清空而不是沿用旧值**。仪表盘上一个"看起来正常但其实是 15 秒前的"数字比"无数据"更危险。
+- **只用标准库 + SQLite**。没有互联网也能装、能跑，换到 Raspberry Pi 只需要复制目录；WAL 模式让接收器写、网页读可以同时进行。代价是没有自动清理、限额和备份，这些在迁移到正式网关时要补。
+- **公网不可见、API 只读**。只绑定实验室有线地址，不绑校园 Wi-Fi；`/ingest` 只监听本机回环地址；网页 API 不返回相机地址和任何凭据。
+
 ## 脚本导航：每个文件是干什么的
 
 本目录的 Python 脚本主要在 **Jetson 的终端**运行，不是在 Arduino IDE 中运行。`static/` 中的 JavaScript 则由浏览器自动运行。网页本身使用 Python 标准库；MQTT 还需要 Paho 和 Mosquitto，相机预览需要 GI/GStreamer 及对应解码插件。不要把“网页无需 pip”理解成整套系统不需要依赖。
