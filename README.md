@@ -4,18 +4,23 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 
 面向南美白对虾养殖的科研级实时监测项目。正式目标缸名义容量 340 L、目标盐度 15–25 ppt；实际运行水量待确认。当前是实验室台架验证，不是已完成的长期部署。
 
-## 当前进度 / Current status — 2026-09-22
+## 当前进度 / Current status — 2026-09-27
 
-| 分区 | 设备 | 最近记录的局域网 IP | 已完成 | 尚未完成 |
+**局域网实时链路已打通（Jetson 临时网关）**：Node 1、Node 2 → 实验室 Wi-Fi → MQTT → Jetson SQLite → 网页；相机 → 有线 → RTSP → 同一网页。
+网页：中文 `http://192.168.88.249:8080`，英文 `http://192.168.88.249:8080/en`（仅实验室局域网可访问）。说明见 [jetson_web](lab_scale/jetson_web/README.md)。
+
+| 分区 | 设备 | 局域网 IP（实测） | 已完成 | 尚未完成 |
 |---|---|---|---|---|
-| [lab_scale / Node-1](lab_scale/Node-1/README.md) | shrimp-node01；ESP32-S3 N16R8；DFRobot SEN0681 DO + SEN0709 ORP | 192.168.88.252（此前日志，待现场复核） | 两路独立 RS485 读取成功；Wi-Fi 已连接；4 s 请求周期 | 校准/验证、UTC、MQTT、长期稳定性 |
-| [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251（用户 2026-09-22 确认） | 两路 UART 回复、读取成功；Wi-Fi 已连接；4 s 请求周期 | K10 配置不匹配、校准、温度补偿、UTC、MQTT |
-| [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 5MP 304 水下相机 + TP-Link/Omada POE150S（商品资料） | NOT VERIFIED | 已接 PoE 网络（用户报告）；已补充规格来源 | 实物版本、IP、视频流、录像验证；淡水款不批准目标盐度长期部署 |
+| [lab_scale / Node-1](lab_scale/Node-1/README.md) | shrimp-node01；ESP32-S3 N16R8；DFRobot SEN0681 DO + SEN0709 ORP | 192.168.88.252 | MQTT 固件已烧录；数据实时进入 Jetson 数据库与网页；断线 25 s 补发无缺口；USB 充电头独立供电 | 校准/验证、UTC、断电持久缓存、长期稳定性 |
+| [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251 | MQTT 固件已烧录；EC、pH 实时进入 Jetson；EC 掉线已重接 | EC 读数 0（K=1 与 K10 不符）、校准、温度补偿、UTC |
+| [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 水下 IP 相机，标签 IPC5MPIR-PBX10 | 192.168.1.88（MAC 已核对） | ONVIF 取得视频地址；子码流 704×576 实时预览进入网页 | 录像策略、相机时钟（差约 6 个月）、改默认密码、淡水款不批准目标盐度长期部署 |
+| [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文网页；落库后才 ACK | 开机自启、磁盘限额/备份、迁移到 Raspberry Pi |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
 
-这些 IP 是记录值，不是固件固定 IP；DHCP 重启后可能变化。Wi-Fi 已连接不等于数据已经通过网络发送。
-目前两块 ESP32 的数据出口仍是 USB 串口；尚无 MQTT、UTC 同步、数据库或实时网页端到端验证。
-`COMM=OK` 只代表通信检查通过，所有测量仍为 `UNVALIDATED`。
+IP 来自 DHCP，重启后可能变化，以 MAC 核对身份为准。
+所有读数仍为 `UNVALIDATED`（未校准），采样 UTC 未同步，网页时间是 Jetson 接收时间。
+节点断网缓冲只在 RAM：Node 1 约 80 s、Node 2 约 27 s，断电丢失；容量与限制条件见各固件 README。
+Jetson 是临时网关，正式架构仍按 SPEC 使用 Raspberry Pi。
 
 ## 目录与使用
 
@@ -28,23 +33,26 @@ lab_scale/
     WIRING.md              # 接线
     COMMUNICATION.md       # 通信与脚本说明
     PROGRESS.md            # 调试进度
-    script/DO_ORP_WiFi/     # .ino 与配套 .h
+    script/DO_ORP_MQTT/    # 当前板上程序（MQTT）
+    script/DO_ORP_WiFi/    # 旧版（仅 USB 串口），保留回退
     tests/
   Node-2/                  # 同样拆分文档
-    script/Atlas_EC_pH_UART/
-  camera_node/             # 同样拆分文档，script/ 暂为空实现
+    script/Atlas_EC_pH_MQTT/   # 当前板上程序（MQTT）
+    script/Atlas_EC_pH_UART/   # 旧版，保留回退
+  camera_node/             # 相机文档；接入代码在 jetson_web
+  jetson_web/              # Jetson 临时网关：MQTT broker、接收器、数据库、网页
   CHANGELOG.md             # 仓库整理记录
+jetson_setting/            # Jetson 设置与交接说明
 tank_scale/README.md        # 未来实际部署
 ```
 
-每块 ESP32 独立上传自己的程序。先将对应程序目录中的 `arduino_secrets.example.h`
-复制为同目录 `arduino_secrets.h`，只在本地填写 Wi-Fi 信息；真实密码文件禁止提交。
-脚本来自现有台架工作副本，本次仅整理目录、补充记录，不变更采集行为、不上传硬件。
-历史 `output/bench` 保留不动；整理后的入口是 `lab_scale`，不要混用不同副本修改。
+每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2` 生成
+`arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz），编译用 `build_node1.py --node 1|2`；真实密码文件禁止提交。
+烧录前的板上 flash 备份在 `.codex-build/node*-backup/`（不入 Git），回退命令见各固件 README。
 
 完整阶段记录见 [lab_scale README](lab_scale/README.md) 与各节点的 PROGRESS.md。
 正式里程碑仍是 **传感器 → ESP32 → UTC → Wi-Fi/MQTT → Raspberry Pi → 数据库 → Dashboard**。
-Jetson Orin 只作为用户拟用的临时测试电脑/后续计算平台，不替代规范中的基础网关要求。
+当前由 Jetson Orin 临时充当网关做实验室演示；它不替代规范中 Raspberry Pi 的基础网关要求。
 
 ## Documentation / 文档
 

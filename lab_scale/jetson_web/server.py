@@ -155,13 +155,13 @@ class Camera:
         self.lock = threading.Lock()
         self.frame = None
         self.last_frame = 0
-        self.state = '视频待验证'
+        self.state, self.code = '视频待验证', 'NOT_CONFIGURED'  # code: language-neutral for other pages
         self.configured = bool(os.getenv('CAMERA_RTSP_URI'))
 
     def snapshot(self):
         with self.lock:
             age = time.time() - self.last_frame if self.last_frame else None
-            return {'configured': self.configured, 'state': self.state,
+            return {'configured': self.configured, 'state': self.state, 'code': self.code,
                     'live': age is not None and age < 10, 'last_frame_age_seconds': age}
 
     def run(self):
@@ -173,41 +173,26 @@ class Camera:
             from gi.repository import Gst
             Gst.init(None)
         except (ImportError, ValueError):
-            self.state = 'GStreamer 不可用'
+            self.state, self.code = 'GStreamer 不可用', 'NO_GSTREAMER'
             return
         # URI comes only from a private server-side environment file, never an API response.
         while True:
-            pipeline = Gst.Pipeline.new('camera')
+            pipeline = None
             try:
-                source = Gst.ElementFactory.make('uridecodebin', 'source')
-                convert = Gst.ElementFactory.make('videoconvert', 'convert')
-                scale = Gst.ElementFactory.make('videoscale', 'scale')
-                rate = Gst.ElementFactory.make('videorate', 'rate')
-                caps = Gst.ElementFactory.make('capsfilter', 'caps')
-                encoder = Gst.ElementFactory.make('jpegenc', 'encoder')
-                sink = Gst.ElementFactory.make('appsink', 'sink')
-                elements = [source, convert, scale, rate, caps, encoder, sink]
-                if any(element is None for element in elements):
-                    raise RuntimeError('Missing GStreamer element')
-                source.set_property('uri', os.environ['CAMERA_RTSP_URI'])
-                caps.set_property('caps', Gst.Caps.from_string('video/x-raw,width=960,pixel-aspect-ratio=1/1,framerate=5/1'))
-                encoder.set_property('quality', 75)
-                sink.set_property('max-buffers', 1)
-                sink.set_property('drop', True)
-                sink.set_property('sync', False)
-                for element in elements:
-                    pipeline.add(element)
-                for first, second in zip(elements[1:], elements[2:]):
-                    if not first.link(second):
-                        raise RuntimeError('Cannot link decoder')
-                def pad_added(_source, pad):
-                    current = pad.get_current_caps()
-                    target = convert.get_static_pad('sink')
-                    if current and current.to_string().startswith('video/') and not target.is_linked():
-                        pad.link(target)
-                source.connect('pad-added', pad_added)
+                # Explicit H.264 chain: uridecodebin picks nvv4l2decoder on Jetson, whose NVMM output
+                # cannot link to videoconvert. ONVIF reports H264 for this camera (2026-09-27).
+                if Gst.ElementFactory.find('nvv4l2decoder') and Gst.ElementFactory.find('nvvidconv'):
+                    decode = 'nvv4l2decoder ! nvvidconv ! video/x-raw,format=I420'
+                else:
+                    decode = 'avdec_h264 ! videoconvert'
+                pipeline = Gst.parse_launch(
+                    'rtspsrc name=src protocols=tcp latency=200 ! rtph264depay ! h264parse ! ' + decode +
+                    ' ! videoscale ! videorate ! video/x-raw,pixel-aspect-ratio=1/1,framerate=5/1'
+                    ' ! jpegenc quality=75 ! appsink name=sink max-buffers=1 drop=true sync=false')
+                pipeline.get_by_name('src').set_property('location', os.environ['CAMERA_RTSP_URI'])
+                sink = pipeline.get_by_name('sink')
                 pipeline.set_state(Gst.State.PLAYING)
-                self.state = '正在连接视频'
+                self.state, self.code = '正在连接视频', 'CONNECTING'
                 bus = pipeline.get_bus()
                 last = time.monotonic()
                 while True:
@@ -216,16 +201,19 @@ class Camera:
                         buffer = sample.get_buffer()
                         content = buffer.extract_dup(0, buffer.get_size())
                         with self.lock:
-                            self.frame, self.last_frame, self.state = content, time.time(), '视频已解码'
+                            self.frame, self.last_frame = content, time.time()
+                            self.state, self.code = '视频已解码', 'LIVE'
                         last = time.monotonic()
                     if bus.pop_filtered(Gst.MessageType.ERROR | Gst.MessageType.EOS) or time.monotonic() - last > 20:
                         break
             except Exception:
                 pass  # Do not log decoder errors containing credentials or private URIs.
             finally:
-                pipeline.set_state(Gst.State.NULL)
+                if pipeline is not None:
+                    pipeline.set_state(Gst.State.NULL)
                 with self.lock:
-                    self.frame, self.last_frame, self.state = None, 0, '视频连接失败，等待重试'
+                    self.frame, self.last_frame = None, 0
+                    self.state, self.code = '视频连接失败，等待重试', 'RETRYING'
             time.sleep(5)
 
 
@@ -342,7 +330,8 @@ def handler_for(store, camera, network, ingest_only=False):
                 if parsed.path == '/api/issues':
                     with store.connect() as db:
                         return self.send([dict(row) for row in db.execute('SELECT * FROM issue ORDER BY id DESC LIMIT 100')])
-                files = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css')}
+                files = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css'),
+                         '/en': ('en.html', 'text/html; charset=utf-8'), '/app_en.js': ('app_en.js', 'text/javascript')}
                 if parsed.path in files:
                     name, kind = files[parsed.path]
                     return self.send((ROOT / 'static' / name).read_bytes(), kind)

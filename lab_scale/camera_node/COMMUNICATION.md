@@ -1,5 +1,7 @@
 # Camera — 网络与通信
 
+**2026-09-27 更新（以此为准）**：IP `192.168.1.88` ↔ MAC `00:12:34:c6:67:04` 已在 Jetson 邻居表确认。ONVIF 设备服务 `http://192.168.1.88:8899/onvif/device_service`，媒体服务 `http://192.168.1.88:8899/onvif/media_service`。视频 H.264，主码流 1920×1080、子码流 704×576；RTSP（554）地址由相机 ONVIF 返回，含账号字段，只存 `jetson_web/.env`，不入 Git、不显示在网页或日志。相机时钟差约 6 个月（NTP 无源）。Jetson 访问需要有线网卡 `enP8p1s0` 上的临时地址 `192.168.1.200/24`。下文为早期记录。
+
 - 相机目标 IP：`192.168.1.88`（实物标签）；2026-09-22 用户报告修正 Jetson 附加地址后 ping 有回应，成功原始输出尚未归档。
 - 候选相机 MAC：`00:12:34:C6:67:04`（RouterOS ether5 动态学习，用户确认直连相机）；最终 IP→MAC 对照待验证。相机登录、准确 RTSP URL：**NOT VERIFIED**；凭据不入库。
 - [商品页](https://www.amazon.com/dp/B07G857V5G?th=1) 标称支持 RTSP、ONVIF、DHCP、NTP；本机是否启用及互通性 **NOT VERIFIED**。这不是 Wi-Fi 相机。

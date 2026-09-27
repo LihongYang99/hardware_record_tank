@@ -1,16 +1,17 @@
 # lab_scale — 实验室台架
 
-整理日期：2026-09-22。依据：用户提供的实物描述、串口日志、路由器截图，以及现有 `output/bench` 程序；不是本次重新测量结果。
+整理日期：2026-09-22；**2026-09-27 更新**：两个节点改为 MQTT 固件，与相机一起接入 Jetson 临时网页（见 [jetson_web](jetson_web/README.md)）。
 
 ## 1. 节点与网络
 
-| 文件夹 | 固件 node_id / hostname | 设备 | IP 记录 |
-|---|---|---|---|
-| [Node-1](Node-1/README.md) | shrimp-node01 | SEN0681 DO、SEN0709 ORP | 192.168.88.252；历史还出现 .254，需复核 |
-| [Node-2](Node-2/README.md) | shrimp-node02 | Atlas EC K10、Industrial pH No Temp，分别经 EZO/ISCCB-2 | 192.168.88.251；用户本次确认 |
-| [camera_node](camera_node/README.md) | NOT VERIFIED；目录名不是设备 hostname | 水下 PoE 相机 | NOT VERIFIED |
+| 文件夹 | 固件 node_id / hostname | 设备 | IP（2026-09-27 实测） | MAC |
+|---|---|---|---|---|
+| [Node-1](Node-1/README.md) | shrimp-node01 | SEN0681 DO、SEN0709 ORP | 192.168.88.252 | 44:B1:76:CE:D1:A8 |
+| [Node-2](Node-2/README.md) | shrimp-node02 | Atlas EC K10、Industrial pH No Temp，分别经 EZO/ISCCB-2 | 192.168.88.251 | 44:B1:76:CC:D4:84 |
+| [camera_node](camera_node/README.md) | ONVIF name `NVT` | 水下 IP 相机（有线接路由器） | 192.168.1.88 | 00:12:34:C6:67:04 |
+| [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200 | — |
 
-路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。两节点通过 Wi-Fi，相机通过有线 PoE 路径；用户已提供 TP-Link/Omada POE150S 注入器链接，实物版本待核对。Barlus 304 相机商品标明淡水用途，不批准目标盐度下长期部署；详见 camera_node/HARDWARE.md。没有上游互联网时仍可进行局域网通信，但当前固件没有 UTC 来源或测量网络接口。
+路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。两节点通过 Wi-Fi，相机通过有线 PoE 路径；用户已提供 TP-Link/Omada POE150S 注入器链接，实物版本待核对。Barlus 304 相机商品标明淡水用途，不批准目标盐度下长期部署；详见 camera_node/HARDWARE.md。没有上游互联网时局域网采集和网页仍可工作；但目前没有 UTC 来源。
 未配置固定地址；不要仅凭旧 IP 判断设备身份，也不要把摄像机 IP 猜成空闲地址。
 
 ## 2. 已完成与边界
@@ -19,22 +20,23 @@
 - Node-1：DO 和 ORP 都曾成功返回；ORP 曾超时，交换/重接转换器后用户报告恢复，根因未隔离。
 - Node-2：两块 Atlas 模块身份查询及测量请求成功。当前 EC 查询 K=1，而探头为 K10；两模块回复 `?CAL,0`；温度补偿设定 25°C 不是实测温度。
 - 节点读取周期都是 4000 ms。两路请求共用同一节点的调度轮次，但不是硬件同时触发；两个 ESP32 之间也尚未同步。
-- Wi-Fi 已连接；网络传输测量值、MQTT、UTC、数据库、网页仪表盘、视频流接入均尚未完成。
-- USB 仅输出，不自动保存磁盘文件。Node-2 有有限 RAM 日志队列，溢出会计数丢失；断电丢失 RAM。Node-1 串口输出仍可能阻塞。
+- 2026-09-27：两节点经 Wi-Fi → MQTT 实时发到 Jetson，落库后才确认（ACK）；相机视频经 RTSP 进入同一网页。中文页 `http://192.168.88.249:8080`，英文页 `/en`。
+- 已实测：Jetson 接收端中断 25 s 后补发无缺口；节点换电源重启后自动恢复上传。
+- 仍未完成：UTC 同步、断电持久缓存（RAM 队列 64 条：Node 1 约 80 s、Node 2 约 27 s）、路由器/Wi-Fi 断开测试、长时间运行、校准、Raspberry Pi 正式网关。
+- Node 1 由 USB 充电头供电；Node 2 目前经 USB 接在 Jetson 上。
 
 台架节点分配与 SPEC 的正式 MID/BOTTOM 编号分开，N16R8 与首选 N8R8 的差异在此记录，不修改正式部署设计。
 台架曾使用 12 V / 5 A 电源且用户暂未安装保险丝；这是未验收现状，不是安全批准。正式部署必须遵守 SPEC 保护要求。
 
-## 3. Arduino IDE 使用
+## 3. 编译与烧录
 
-1. Node-1 打开 `Node-1/script/DO_ORP_WiFi/DO_ORP_WiFi.ino`；Node-2 打开 `Node-2/script/Atlas_EC_pH_UART/Atlas_EC_pH_UART.ino`。
-2. 保留各自整个 sketch 文件夹，所有 `.h` 都参与同一次编译，不单独上传。
-3. 将同目录 `arduino_secrets.example.h` 复制为 `arduino_secrets.h` 并本地填写。示例文件没有真实 SSID/密码。
-4. 沿用先前测试设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled。原测试 core 为 3.3.11。
-5. 选择实际连接的板子和端口上传；Mac `/dev/cu.usbmodem...` 会变化，不写死。Serial Monitor 为 115200。
-6. 上传后板子可独立运行，但仍需供电；当前若拔掉电脑，不能因此期待在网页看到数据。
+当前板上程序是 MQTT 版本：Node-1 `Node-1/script/DO_ORP_MQTT/`，Node-2 `Node-2/script/Atlas_EC_pH_MQTT/`。旧版 `DO_ORP_WiFi/`、`Atlas_EC_pH_UART/`（仅 USB 串口）保留作回退。
 
-没有新增网络、校准或远程控制功能；这里整理的是已存在的程序。板上实际二进制与本次整理快照是否完全相同，没有做回读比对。
+1. 保留整个 sketch 文件夹，所有 `.h` 都参与同一次编译，不单独上传。
+2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
+3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
+4. 烧录前核对 `/dev/serial/by-id/` 中的 MAC 与目标节点一致，并先回读 flash 备份（见各固件 README）。固件启动时也会检查出厂 MAC，不符就不运行传感器。
+5. USB Serial 115200 仍输出同样的日志行；拔掉 USB 不影响 MQTT 发送，但板子需要其他 5 V 供电。
 
 ## 4. 日志字段
 
@@ -52,6 +54,8 @@
 | COMM=OK | 协议层检查通过，不等于校准有效 |
 | QC / validation | 质量状态；错误不能改成数值零 |
 | compensation_setting_C | Atlas 保存的补偿设置，并非温度探头读数 |
+
+MQTT 版本每行另加 `transport_boot_id`、`transport_seq`（传输序号，检测丢失）、`firmware`、`transport_age_ms`、`network_buffered`（超过 15 s 未发出为 1）。
 
 `seq` 和 `cycle` 的偏差不是 UTC 导致。历史日志字段尚不完全统一、部分诊断没有全部标识；正式标准化消息仍待实现。
 
@@ -75,5 +79,10 @@ clang++ -std=c++11 -Wall -Wextra -fsanitize=address,undefined -I lab_scale/Node-
 
 ## 7. 下一阶段
 
-先解决 EC K10 配置、校准、样品温度补偿和接线可靠性；然后实现离线局域网 UTC 来源、MQTT、Raspberry Pi 原始记录与仪表盘、掉线恢复。
-相机独立确认型号/IP/视频协议。正式部署资料保留在 [tank_scale](../tank_scale/README.md)。
+- Node 2：确认 EC 探头 K 值（K10）并校准 EC、pH，加入样品温度补偿。
+- 离线局域网 UTC 来源（节点与相机都需要）。
+- 断网缓冲：评估 PSRAM / LittleFS / SD 卡，以及发送能力（每节点约 4–10 条/s）。
+- 相机录像策略、改相机默认密码。
+- 把 broker、接收器和网页迁到 Raspberry Pi（SPEC 正式架构），加开机自启和磁盘管理。
+
+相机盐水部署限制见 camera_node/HARDWARE.md。正式部署资料保留在 [tank_scale](../tank_scale/README.md)。

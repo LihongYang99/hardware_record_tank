@@ -27,3 +27,21 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 ## 目录修正
 
 按用户澄清取消 sessions 目录，历史记录移入各节点 PROGRESS.md，硬件、接线、通信拆成独立文件；firmware 目录改为 script。保留代码及历史信息。
+
+# 2026-09-26 至 09-27 — 局域网实时链路（Jetson 临时网关）
+
+## 变更
+
+- Node-1 新增并烧录 `DO_ORP_MQTT`；Node-2 新增并烧录 `Atlas_EC_pH_MQTT`（传感器代码与旧版逐字节相同）。旧版程序保留；烧录前 16 MB flash 备份在 `.codex-build/node*-backup/`。
+- 固件修正：MQTT 写缓冲 256 → 1536 B；板身份改读 eFuse MAC，身份不符时 USB 提示 `WRONG_BOARD`。
+- Jetson：broker 每节点独立账号与 ACL；接收器支持两个节点并按主题校验身份；`run_mqtt.py` 响应 SIGTERM；`configure_node1.py` / `build_node1.py` 支持 `--node 2`。
+- 相机：`camera_onvif.py` 通过 ONVIF 取 RTSP 地址存入私密 `.env`；网页相机管道改为明确的 H.264 链路（修复 Jetson 硬件解码器接不上导致无画面）。
+- 网页新增英文页 `/en`；接口新增 `camera.code`。
+- 根 README、lab_scale README、jetson_web README 与各节点/相机 PROGRESS 更新到当前状态，并记录容量与限制条件。
+
+## 验证
+
+- 网页/MQTT 自动测试 14 项通过（含 Node 2 路由、冒充拒收、ACL 隔离）。
+- 实板：两个节点数据实时入库，无拒收、无序号缺口；Jetson 接收端中断 25 s 后补发无缺口；Node 1 换电源重启后自动恢复。
+- 相机：IP↔MAC 核对；GStreamer 软/硬件解码均出画面；网页 API 与日志不含视频地址。
+- 未验证：UTC、断电持久缓存、路由器/Wi-Fi 中断、长时间运行、校准。

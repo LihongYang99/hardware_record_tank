@@ -2,13 +2,25 @@
 
 本目录是临时集成，不替代 SPEC 中 Raspberry Pi 正式网关。使用系统 Python 3 标准库（HTTP + SQLite）；相机可选使用系统 Python GI/GStreamer。无需 npm、pip 或云端资源。
 
-## 当前状态（2026-09-23）
+## 当前状态（2026-09-27）
 
-已完成页面、原始日志保存、测量解析、历史曲线、CSV 导出、序号异常记录和服务器端相机预览适配器。**尚未完成三个节点的真实数据端到端接入。**
+**Node 1、Node 2 和相机都已实时接入。** 中文页 `http://192.168.88.249:8080`，英文页 `http://192.168.88.249:8080/en`（仅实验室局域网）。
 
-本机实测：Jetson Orin Nano，Ubuntu 22.04.5 / aarch64。有线 `enP8p1s0` 为 `192.168.88.249/24`，学校 Wi-Fi `wlP1p1s0` 提供优先默认路由。两个节点 `192.168.88.252` / `.251` ping 有回应，MAC 分别匹配交接中的 `44:b1:76:ce:d1:a8` / `44:b1:76:cc:d4:84`。这些地址须在网络变化后重新核对。
+完整启动顺序（Jetson 终端，本目录）：
 
-仓库固件尚无 MQTT，当前没有 USB 串口设备。因此真实数据库起始为空。未安装或配置 MQTT broker，未改写或烧录 ESP32。相机 `192.168.1.88` 目前路由走学校 Wi-Fi，需先修复有线临时相机网段，再从设备/厂家证据取得真实 URI；不能猜测 RTSP 路径。GStreamer rtspsrc、jpegenc 和 Python GI 已检测到；尚未通过实际视频验收。
+```bash
+sudo ip addr add 192.168.1.200/24 dev enP8p1s0      # 相机网段，每次重启/重插网线后
+nohup python3 -u run_mqtt.py > data/mqtt.log 2>&1 & echo $! > data/mqtt.pid
+set -a; . ./.env; set +a
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/server.log 2>&1 & echo $! > data/server.pid
+# 停止：kill "$(cat data/mqtt.pid)" "$(cat data/server.pid)"
+```
+
+下方按日期保留历史记录；较早段落里“尚未接入”等描述已被后面的日期段落取代。
+
+### 2026-09-23 初始状态（历史）
+
+已完成页面、原始日志保存、测量解析、历史曲线、CSV 导出、序号异常记录和服务器端相机预览适配器。当时尚未接入真实数据。
 
 ## 启动与停止（在 Jetson 终端运行）
 
@@ -147,3 +159,33 @@ Node 2 已烧录 `Atlas_EC_pH_MQTT`，与 Node 1 共用同一个 broker、接收
 - `configure_node1.py` 与 `build_node1.py` 增加 `--node 2`；`--wifi-from-node1` 复用 Node 1 的 Wi-Fi 设置且不显示密码。
 - 两个节点合计约 2.5 条/s，按前面的每行约 2 KB 估算，数据库约 **200–450 MB/天**（粗估，Node 2 EC 恢复后会更多）。
 - 自动测试 14 项（新增 Node 2 按主题路由、冒充其他节点被拒、ACL 隔离）。
+
+## 2026-09-27：相机视频接入
+
+相机（`192.168.1.88`，有线接路由器）画面已显示在网页。
+
+1. **网络（每次 Jetson 重启或重插网线后都要做，Jetson 终端）**：`sudo ip addr add 192.168.1.200/24 dev enP8p1s0`。撤销：`sudo ip addr del 192.168.1.200/24 dev enP8p1s0`。
+2. **视频地址**：`python3 camera_onvif.py` 通过 ONVIF 向相机要子码流（profile `001`）地址，写入 `.env`（0600，Git 忽略，不打印）。`--profile 000` 为 1920×1080 主码流。
+3. **启动网页时加载 `.env`**：
+
+```bash
+set -a; . ./.env; set +a
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/server.log 2>&1 & echo $! > data/server.pid
+```
+
+相机管道改为明确的 H.264 链路：`uridecodebin` 在 Jetson 上会自动选硬件解码器，其 NVMM 输出接不上 `videoconvert`，导致一直无画面。
+
+相机容量与限制：
+
+| 项目 | 数值 / 说明 |
+|---|---|
+| 预览 | 子码流 704×576 H.264（相机上限 25 fps、1536 kbps），服务端转 5 帧/s JPEG（约 32 KB/帧），浏览器约每 2 s 取一帧 |
+| 首帧时间 | 约 0.9 s |
+| 录像 | **无**，不占磁盘 |
+| 时间 | 相机时钟差约 6 个月，只用 Jetson 取帧时间 |
+| 编码假设 | 只支持 H.264；相机改为 H.265 后需要改管道 |
+| 安全 | 相机允许匿名 ONVIF 查询并返回带账号字段的 RTSP 地址；网页 API/日志不返回地址 |
+
+## 2026-09-27：英文页面
+
+`http://192.168.88.249:8080/en`：给外国访客看的全英文页面（`static/en.html` + `static/app_en.js`，共用 `style.css` 和同一套 API）。显示内容、QC 规则和“未校准 / UTC 未同步”提示与中文页一致，另加一段英文系统说明。两个页面右上角可以互相切换。接口新增语言无关的 `camera.code`（`LIVE` / `CONNECTING` / `RETRYING` / `NOT_CONFIGURED` / `NO_GSTREAMER`），英文页据此显示相机状态；传感器名称按 `sensor/parameter` 在前端翻译。

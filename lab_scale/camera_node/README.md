@@ -1,5 +1,7 @@
 # camera_node — 水下 PoE IP 相机
 
+**当前状态（2026-09-27）**：相机有线接实验室路由器，视频已接入 Jetson 网页（子码流 704×576，约 5 帧/s 预览，不录像）。详见 [PROGRESS.md](PROGRESS.md)。
+
 已记录 Barlus 相机和 TP-Link/Omada POE150S 注入器商品参数。2026-09-22 实物标签显示相机型号 IPC5MPIR-PBX10、默认 IP 192.168.1.88；用户修正 Jetson 临时地址后报告 ping 已有回应。最终 MAC 对照和视频流仍待验证；商品型号对应关系见 HARDWARE.md。
 
 **重要：当前 304 相机标明淡水用途；不能批准用于项目 15–25 ppt 的长期盐水浸泡。** 规格来源、冲突和验证边界见 HARDWARE.md。
