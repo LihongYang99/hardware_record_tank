@@ -1,4 +1,4 @@
-"""Receive Node 1 records; application acknowledgement follows SQLite commit."""
+"""Receive Node 1/Node 2 records; application acknowledgement follows SQLite commit."""
 import argparse
 import importlib.util
 import json
@@ -16,11 +16,16 @@ if importlib.util.find_spec('paho') is None:
 import paho.mqtt.client as mqtt
 from server import Store, fields, utc
 
-TOPIC = 'shrimp/lab/shrimp-node01/'
+MQTT_NODES = ('shrimp-node01', 'shrimp-node02')
 NODE = 'shrimp-node01'
+TOPIC = f'shrimp/lab/{NODE}/'  # Node 1 prefix, kept for existing callers
 
 
-def accept_record(store, payload):
+def topic(node):
+    return f'shrimp/lab/{node}/'
+
+
+def accept_record(store, payload, node=NODE):
     """Reject ambiguous identity; retain malformed payload in a separate quarantine."""
     line = payload.decode('utf-8', errors='strict')
     if len(payload) > 8192 or '\n' in line or '\r' in line:
@@ -33,11 +38,13 @@ def accept_record(store, payload):
     seq = f.get('transport_seq', '')
     if not re.fullmatch(r'[0-9a-f]{16}', boot) or not seq.isdigit() or not 0 < int(seq) <= 4294967295:
         raise ValueError('Invalid delivery identity')
-    if f.get('boot_id', boot) != boot or f.get('node_id', NODE) != NODE:
+    if node not in MQTT_NODES:
+        raise ValueError('Unknown node')
+    if f.get('boot_id', boot) != boot or f.get('node_id', node) != node:
         raise ValueError('Conflicting source identity')
     if not f.get('transport_age_ms', '').isdigit() or int(f['transport_age_ms']) > 2**63-1:
         raise ValueError('Invalid transport age')
-    store.ingest(NODE, line, transport='mqtt')
+    store.ingest(node, line, transport='mqtt')
     return f'{boot}:{int(seq)}'
 
 
@@ -45,7 +52,7 @@ class Receiver:
     def __init__(self, store, host, port, password):
         self.store, self.host, self.port = store, host, port
         # Clean session is safe: ESP retains its head record until our application ACK.
-        self.client = mqtt.Client(client_id='jetson-node01-receiver', clean_session=True)
+        self.client = mqtt.Client(client_id='jetson-lab-receiver', clean_session=True)
         self.client.username_pw_set('jetson-receiver', password)
         self.client.on_connect = self.on_connect
         self.client.on_message = self.on_message
@@ -55,30 +62,35 @@ class Receiver:
 
     def on_connect(self, client, _userdata, _flags, rc):
         if rc == 0:
-            client.subscribe([(TOPIC + 'records', 1), (TOPIC + 'status', 1)])
-            logging.info('MQTT connected; subscribed to Node 1')
+            client.subscribe([(topic(n) + suffix, 1) for n in MQTT_NODES for suffix in ('records', 'status')])
+            logging.info('MQTT connected; subscribed to %s', ', '.join(MQTT_NODES))
         else:
             logging.error('MQTT connection refused (code %s)', rc)
 
     def on_message(self, client, _userdata, message):
-        if message.topic == TOPIC + 'status':
+        # Identity comes from the topic, which the broker ACL restricts to that node's account.
+        parts = message.topic.split('/')
+        if len(parts) != 4 or parts[:2] != ['shrimp', 'lab'] or parts[2] not in MQTT_NODES:
+            return
+        node, kind = parts[2], parts[3]
+        if kind == 'status':
             status = message.payload.decode('utf-8', errors='replace')
             if status in ('online', 'offline'):
                 with self.store.connect() as db:
-                    db.execute('INSERT OR REPLACE INTO mqtt_status VALUES(?,?,?)', (NODE, utc(), status))
+                    db.execute('INSERT OR REPLACE INTO mqtt_status VALUES(?,?,?)', (node, utc(), status))
             return
-        if message.topic != TOPIC + 'records':
+        if kind != 'records':
             return
         try:
-            ack = accept_record(self.store, message.payload)
+            ack = accept_record(self.store, message.payload, node)
         except (ValueError, UnicodeError) as error:
             with self.store.connect() as db:
                 db.execute('INSERT INTO mqtt_rejected(received_utc,topic,payload,reason) VALUES(?,?,?,?)',
                            (utc(), message.topic, message.payload, str(error)))
-            logging.error('Rejected Node 1 record; preserved in mqtt_rejected, no application ACK')
+            logging.error('Rejected %s record; preserved in mqtt_rejected, no application ACK', node)
             return
         # Store.ingest has committed and closed its SQLite transaction before this call.
-        client.publish(TOPIC + 'ack', ack, qos=1, retain=False)
+        client.publish(topic(node) + 'ack', ack, qos=1, retain=False)
 
     def run(self):
         while True:

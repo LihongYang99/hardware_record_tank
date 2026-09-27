@@ -7,6 +7,10 @@
 #include <freertos/queue.h>
 #include <freertos/task.h>
 
+// Copied from Node-1 DO_ORP_MQTT (field-tested 2026-09-26); node name/firmware tag are macros.
+#ifndef TELEMETRY_NODE
+#error Define TELEMETRY_NODE and TELEMETRY_FIRMWARE before including Telemetry.h
+#endif
 // Only the acquisition loop produces records. Only worker() owns the MQTT client.
 // Bounded RAM: retain oldest unsent records, drop newest on overflow, count every loss.
 class Telemetry : public Print {
@@ -26,9 +30,9 @@ class Telemetry : public Print {
   void worker() {
     mqtt.begin(MQTT_HOST, MQTT_PORT, socket);
     mqtt.setOptions(20, true, 2000);
-    mqtt.setWill("shrimp/lab/shrimp-node01/status", "offline", true, 1);
+    mqtt.setWill("shrimp/lab/" TELEMETRY_NODE "/status", "offline", true, 1);
     mqtt.onMessage([this](String &topic, String &payload) {
-      if(topic=="shrimp/lab/shrimp-node01/ack" && payload==expectedAck) acked=true;
+      if(topic=="shrimp/lab/" TELEMETRY_NODE "/ack" && payload==expectedAck) acked=true;
     });
     uint32_t lastConnect=millis()-5000, lastSend=millis()-5000, inflight=0;
     Record current={};
@@ -39,9 +43,9 @@ class Telemetry : public Print {
       if(!mqtt.connected()) {
         if(now-lastConnect<5000) { vTaskDelay(pdMS_TO_TICKS(20)); continue; }
         lastConnect=now;
-        if(!mqtt.connect("shrimp-node01",MQTT_USER,MQTT_PASSWORD)) continue;
-        if(!mqtt.subscribe("shrimp/lab/shrimp-node01/ack",1)) { mqtt.disconnect(); continue; }
-        mqtt.publish("shrimp/lab/shrimp-node01/status","online",true,1);
+        if(!mqtt.connect(TELEMETRY_NODE,MQTT_USER,MQTT_PASSWORD)) continue;
+        if(!mqtt.subscribe("shrimp/lab/" TELEMETRY_NODE "/ack",1)) { mqtt.disconnect(); continue; }
+        mqtt.publish("shrimp/lab/" TELEMETRY_NODE "/status","online",true,1);
         lastSend=millis()-5000;
       }
       mqtt.loop();
@@ -60,7 +64,7 @@ class Telemetry : public Print {
         int n=snprintf(outgoing,sizeof(outgoing),"%s transport_age_ms=%llu network_buffered=%d",current.text,
                        (unsigned long long)age,age>15000);
         if(n>0 && n<int(sizeof(outgoing)))
-          mqtt.publish("shrimp/lab/shrimp-node01/records",outgoing,false,1);
+          mqtt.publish("shrimp/lab/" TELEMETRY_NODE "/records",outgoing,false,1);
         lastSend=millis();
       }
       vTaskDelay(pdMS_TO_TICKS(10));
@@ -87,7 +91,7 @@ public:
     if(overflow || nextID==0) { ++formatLost; used=0; overflow=false; return 1; }
     assembling[used]=0;
     Record record={}; record.captured=esp_timer_get_time(); record.id=nextID;
-    snprintf(record.text,sizeof(record.text),"%s transport_boot_id=%s transport_seq=%lu firmware=node01-mqtt-0.1",assembling,boot,(unsigned long)nextID);
+    snprintf(record.text,sizeof(record.text),"%s transport_boot_id=%s transport_seq=%lu firmware=" TELEMETRY_FIRMWARE,assembling,boot,(unsigned long)nextID);
     if(!pending || xQueueSend(pending,&record,0)!=pdTRUE) ++mqttLost;
     if(!usb || xQueueSend(usb,&record,0)!=pdTRUE) ++usbLost;
     used=0; return 1;

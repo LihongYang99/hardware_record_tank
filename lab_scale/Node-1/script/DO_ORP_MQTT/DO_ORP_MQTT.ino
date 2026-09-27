@@ -5,6 +5,7 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_mac.h>
 #include <math.h>
 #include "arduino_secrets.h"
 #include "Protocol.h"
@@ -145,7 +146,10 @@ void setup() {
 #endif
   Serial.setTxTimeoutMs(0);
   WiFi.mode(WIFI_STA);
-  correctBoard=WiFi.macAddress().equalsIgnoreCase("44:B1:76:CE:D1:A8");
+  // Factory base MAC from eFuse; WiFi.macAddress() can be empty before the netif is up.
+  const uint8_t node1Mac[6]={0x44,0xB1,0x76,0xCE,0xD1,0xA8};
+  uint8_t mac[6]={};
+  correctBoard=esp_efuse_mac_get_default(mac)==ESP_OK && memcmp(mac,node1Mac,6)==0;
   if(!correctBoard) return; // Never run Node 1 sensor traffic on another board.
   snprintf(bootID,sizeof(bootID),"%08lx%08lx",(unsigned long)esp_random(),(unsigned long)esp_random());
   if(!telemetry.begin(bootID)) { correctBoard=false; return; }
@@ -159,7 +163,11 @@ void setup() {
 }
 
 void loop() {
-  if(!correctBoard) { delay(100); return; }
+  if(!correctBoard) {
+    // Direct, non-blocking notice so a wrong board is never silent.
+    if(millis()-lastHealth>=5000) { lastHealth=millis(); Serial.println("node_id=shrimp-node01 event=WRONG_BOARD sensors=DISABLED"); }
+    delay(100); return;
+  }
   const uint32_t now = millis();
   const uint32_t ticks = (now - lastCycle) / POLL_INTERVAL_MS;
   const bool pollDue = ticks > 0;

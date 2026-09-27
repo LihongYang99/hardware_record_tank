@@ -108,3 +108,42 @@ python3 configure_node1.py
 自动测试：`python3 -m unittest discover -s lab_scale/jetson_web -v`（仓库根目录运行）。包含临时 broker、临时数据库、断开接收器后重连、ACK 必须在落库之后、写盘失败无 ACK、重复键/错节点拒绝、补发旧值 STALE 等。传感器解析使用既有 C++ 协议回归测试。
 
 协议依据：[Arduino MQTT](https://github.com/256dpi/arduino-mqtt)、[Mosquitto 配置](https://mosquitto.org/man/mosquitto-conf-5.html)。
+
+## 2026-09-26：Node 1 实时数据已接通
+
+Node 1 已烧录 MQTT 固件，DO / 饱和度 / 温度 / ORP 实时写入 `data/measurements.sqlite3` 并显示在网页。后台运行方式（Jetson 终端，本目录）：
+
+```bash
+nohup python3 -u run_mqtt.py > data/mqtt.log 2>&1 & echo $! > data/mqtt.pid
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/server.log 2>&1 & echo $! > data/server.pid
+# 停止：
+kill "$(cat data/mqtt.pid)" "$(cat data/server.pid)"
+```
+
+`run_mqtt.py` 收到 `kill`（SIGTERM）时会同时停止 broker 与接收器。两者都不会开机自启；Jetson 重启后需重新运行。Node 2 与相机尚未接入。
+
+Node 1 已改由 USB 充电头供电，不再接 Jetson；Jetson USB 现接 Node 2（`/dev/ttyACM0`）。
+
+### Jetson 端容量与限制（2026-09-26 实测/估算）
+
+| 项目 | 数值 | 说明 |
+|---|---|---|
+| 单条上限 | 8,192 B | broker `message_size_limit` 与接收器上限一致，超出拒收 |
+| Broker 离线排队 | `max_queued_messages 1000`，持久化每 10 s 写盘 | 仅对订阅会话有效；本项目接收器用 clean session，主要靠 ESP 端重发 |
+| 数据库占用 | 603 条原始行 + 940 条测量 ≈ 1,187,840 B，约 2 KB/原始行（含测量行和索引） | 数据量还小，估算偏粗 |
+| Node 1 数据量估算 | 0.80 条/s × 86,400 ≈ 69,000 条/天 ≈ **100–140 MB/天** | 估算，未长时间验证；加入 Node 2 会增加 |
+| 磁盘 | 根分区可用约 77.8 GB / 124 GB | 按上面估算够用数月以上，但**没有自动清理、限额或备份** |
+| STALE 判定 | 最后一条记录（加上传输延迟）超过 15 s | |
+| 网页曲线 | 每个参数最近 300 个点 | CSV 导出全部 |
+| 自启动 | 无 | Jetson 重启、断电后需手动运行上面两条命令 |
+
+固件端的容量限制见 [../Node-1/script/DO_ORP_MQTT/README.md](../Node-1/script/DO_ORP_MQTT/README.md#容量与限制条件)。
+
+## 2026-09-27：Node 2 接入
+
+Node 2 已烧录 `Atlas_EC_pH_MQTT`，与 Node 1 共用同一个 broker、接收器和数据库。接收器按主题区分节点（`shrimp/lab/<node>/records`），记录中的 `node_id` 必须与主题一致，否则存入 `mqtt_rejected` 且不回 ACK。每个节点有独立 broker 账号，ACL 只允许它写自己的主题。
+
+- `prepare_mqtt.py` 再次运行时保留已有密码，只补缺少的账号（已烧进节点的密码不能变）。
+- `configure_node1.py` 与 `build_node1.py` 增加 `--node 2`；`--wifi-from-node1` 复用 Node 1 的 Wi-Fi 设置且不显示密码。
+- 两个节点合计约 2.5 条/s，按前面的每行约 2 KB 估算，数据库约 **200–450 MB/天**（粗估，Node 2 EC 恢复后会更多）。
+- 自动测试 14 项（新增 Node 2 按主题路由、冒充其他节点被拒、ACL 隔离）。

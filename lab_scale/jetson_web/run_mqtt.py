@@ -4,6 +4,7 @@ import argparse
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -12,7 +13,12 @@ ROOT = Path(__file__).resolve().parent
 RUNTIME = ROOT.parents[1] / '.codex-build/runtime'
 
 
+def _stop(*_):
+    raise KeyboardInterrupt  # SIGTERM (kill) stops broker and receiver like Ctrl+C
+
+
 def main():
+    signal.signal(signal.SIGTERM, _stop)
     parser = argparse.ArgumentParser()
     parser.add_argument('--db', default=str(ROOT/'data/measurements.sqlite3'))
     args = parser.parse_args()

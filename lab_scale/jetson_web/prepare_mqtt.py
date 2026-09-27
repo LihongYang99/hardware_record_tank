@@ -10,6 +10,7 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent
+NODES = ('shrimp-node01', 'shrimp-node02')
 
 
 def prepare(directory, host):
@@ -18,26 +19,20 @@ def prepare(directory, host):
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     os.chmod(directory, 0o700)
     credentials_file = directory / 'credentials.json'
-    if credentials_file.exists():
-        credentials = json.loads(credentials_file.read_text())
-    else:
-        credentials = {name: secrets.token_hex(24) for name in ('shrimp-node01', 'jetson-receiver')}
-        credentials_file.write_text(json.dumps(credentials))
+    credentials = json.loads(credentials_file.read_text()) if credentials_file.exists() else {}
+    # Keep existing passwords (already flashed into nodes); only add missing accounts.
+    for name in (*NODES, 'jetson-receiver'):
+        credentials.setdefault(name, secrets.token_hex(24))
+    credentials_file.write_text(json.dumps(credentials))
     passwd = shutil.which('mosquitto_passwd') or str(ROOT.parents[1] / '.codex-build/runtime/usr/bin/mosquitto_passwd')
     password_file = directory / 'passwords'
     password_file.write_text(''.join(f'{name}:{password}\n' for name, password in credentials.items()))
     password_file.chmod(0o600)
     # Official utility hashes the private file in place; passwords never enter process arguments.
     subprocess.run([passwd, '-U', str(password_file)], check=True, capture_output=True)
-    (directory / 'acl').write_text('''user shrimp-node01
-topic write shrimp/lab/shrimp-node01/records
-topic write shrimp/lab/shrimp-node01/status
-topic read shrimp/lab/shrimp-node01/ack
-user jetson-receiver
-topic read shrimp/lab/shrimp-node01/records
-topic read shrimp/lab/shrimp-node01/status
-topic write shrimp/lab/shrimp-node01/ack
-''')
+    acl = ''.join(f'user {n}\ntopic write shrimp/lab/{n}/records\ntopic write shrimp/lab/{n}/status\ntopic read shrimp/lab/{n}/ack\n' for n in NODES)
+    acl += 'user jetson-receiver\n' + ''.join(f'topic read shrimp/lab/{n}/records\ntopic read shrimp/lab/{n}/status\ntopic write shrimp/lab/{n}/ack\n' for n in NODES)
+    (directory / 'acl').write_text(acl)
     (directory / 'mosquitto.conf').write_text(f'''listener 1883 127.0.0.1
 listener 1883 {host}
 allow_anonymous false

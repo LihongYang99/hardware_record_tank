@@ -16,5 +16,5 @@ EC 输出设置为 `O,EC,1`、`O,TDS,0`、`O,S,1`、`O,SG,0`，随后每 4 s 发
 这些是现有代码行为；协议参考 [EZO-EC 手册](https://files.atlas-scientific.com/EC_EZO_Datasheet.pdf)、[EZO-pH 手册](https://files.atlas-scientific.com/pH_EZO_Datasheet.pdf)。
 目前不支持把 Serial Monitor 输入直接转发为校准命令。
 
-Wi-Fi 状态变化时及每 5 s 输出 `[WiFi] Connected | IP=... | node_id=shrimp-node02`；不发送测量到服务器。
+Wi-Fi 状态变化时及每 5 s 输出 `[WiFi] Connected | IP=... | node_id=shrimp-node02`。旧版 `Atlas_EC_pH_UART` 不发送测量到服务器；2026-09-27 起板上是 [Atlas_EC_pH_MQTT](script/Atlas_EC_pH_MQTT/README.md)，每一行日志都经 MQTT 发到 Jetson。
 USB Monitor 115200；UART 的 9600 与它不同。上传设置见 [总说明](../README.md)。

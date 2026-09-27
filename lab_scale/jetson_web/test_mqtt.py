@@ -12,7 +12,7 @@ from unittest.mock import patch
 from urllib.request import urlopen
 from http.server import ThreadingHTTPServer
 from server import Store, Camera, Network, handler_for
-from mqtt_receiver import Receiver, accept_record, mqtt, RUNTIME, TOPIC
+from mqtt_receiver import Receiver, accept_record, mqtt, RUNTIME, TOPIC, topic
 from prepare_mqtt import prepare
 
 
@@ -21,6 +21,14 @@ def packet(seq=1, age=0):
             'request_uptime_ms=4000 rx_uptime_ms=4050 UTC=UNSYNCED raw=01030C '
             'DO_mg_L=7.575 saturation_pct=102.31 temperature_C=21.38 COMM=OK QC=UNVALIDATED '
             f'transport_boot_id=0123456789abcdef transport_seq={seq} transport_age_ms={age}').encode()
+
+
+def node2_packet(seq=1):
+    return (f'node_id=shrimp-node02 boot_id=fedcba9876543210 sensor=PH_ATLAS_EZO seq={seq} cycle=1 '
+            'scheduled_uptime_ms=4000 request_uptime_ms=4000 rx_uptime_ms=4180 UTC=UNSYNCED pH=7.012 '
+            'compensation_setting_C=25.00 calibration_reply=?CAL,0 COMM=OK QC=COMPENSATION_MISSING '
+            f'validation=UNVALIDATED temp_source=NOT_VERIFIED transport_boot_id=fedcba9876543210 transport_seq={seq} '
+            'firmware=node02-mqtt-0.1 transport_age_ms=3 network_buffered=0').encode()
 
 
 class MQTTTests(unittest.TestCase):
@@ -52,6 +60,30 @@ class MQTTTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 accept_record(self.store, bad)
         self.assertEqual(self.store.latest()[1]['measurements'], 0)
+
+    def test_node2_routed_by_topic_and_cannot_impersonate(self):
+        receiver = Receiver(self.store, '127.0.0.1', 1883, 'test')
+        class Client:
+            published = []
+            def publish(inner, topic_name, payload, **kwargs):
+                inner.published.append((topic_name, payload))
+        client = Client()
+        message = type('Message', (), {'topic': topic('shrimp-node02')+'records', 'payload': node2_packet()})()
+        receiver.on_message(client, None, message)
+        self.assertEqual(client.published, [(topic('shrimp-node02')+'ack', 'fedcba9876543210:1')])
+        self.assertEqual(self.store.latest()[1]['measurements'], 1)
+        for payload, node in [(node2_packet(2), 'shrimp-node01'), (packet(), 'shrimp-node02'), (packet(), 'shrimp-node99')]:
+            with self.assertRaises(ValueError):
+                accept_record(self.store, payload, node)
+        self.assertEqual(self.store.latest()[1]['measurements'], 1)
+
+    def test_acl_isolates_each_node(self):
+        credentials = prepare(Path(self.temp.name)/'mqtt', '127.0.0.2')
+        self.assertIn('shrimp-node02', credentials)
+        acl = (Path(self.temp.name)/'mqtt'/'acl').read_text().split('user ')
+        node2 = next(block for block in acl if block.startswith('shrimp-node02'))
+        self.assertIn('topic write shrimp/lab/shrimp-node02/records', node2)
+        self.assertNotIn('shrimp-node01', node2)
 
     def test_retry_is_idempotent_and_buffered_data_is_stale_in_api(self):
         self.assertEqual(accept_record(self.store, packet(age=60000)), '0123456789abcdef:1')
