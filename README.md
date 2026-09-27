@@ -8,6 +8,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 
 **局域网实时链路已打通（Jetson 临时网关）**：Node 1、Node 2 → 实验室 Wi-Fi → MQTT → Jetson SQLite → 网页；相机 → 有线 → RTSP → 同一网页。
 网页：中文 `http://192.168.88.249:8080`，英文 `http://192.168.88.249:8080/en`（仅实验室局域网可访问）。说明见 [jetson_web](lab_scale/jetson_web/README.md)。
+在实验室外：先连学校 Cisco VPN，再用 SSH 端口转发访问，见 [远程访问说明](jetson_setting/REMOTE_ACCESS.md)。学校不允许在校园网运行第三方 VPN / 隧道，因此不使用 Tailscale 等。
 
 | 分区 | 设备 | 局域网 IP（实测） | 已完成 | 尚未完成 |
 |---|---|---|---|---|

@@ -10,6 +10,8 @@
 
 交接说明包含节点信息、MQTT 缺口、相机已验证与待验证状态、网页需求、执行顺序、安全边界和验收要求。不保存任何密码。
 
+从实验室外访问网页（学校 Cisco VPN + SSH 端口转发，不用第三方隧道）见 [REMOTE_ACCESS.md](REMOTE_ACCESS.md)。
+
 详细的历史相机命令解释见 [Jetson 相机网络调试记录](../lab_scale/camera_node/JETSON_NETWORK_DEBUG.md)。
 
 说明原位于 `lab_scale/JETSON_HANDOVER.md`，现统一移动至本目录。

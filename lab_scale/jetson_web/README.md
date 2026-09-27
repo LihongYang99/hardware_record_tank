@@ -6,6 +6,8 @@
 
 **Node 1、Node 2 和相机都已实时接入。** 中文页 `http://192.168.88.249:8080`，英文页 `http://192.168.88.249:8080/en`（仅实验室局域网）。
 
+实验室外访问：学校 Cisco VPN + `ssh -L 8080:192.168.88.249:8080 lihongyang2026@10.141.48.128`，然后打开 `http://localhost:8080`。详见 [../../jetson_setting/REMOTE_ACCESS.md](../../jetson_setting/REMOTE_ACCESS.md)。
+
 完整启动顺序（Jetson 终端，本目录）：
 
 ```bash
