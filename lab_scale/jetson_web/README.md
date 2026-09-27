@@ -2,6 +2,57 @@
 
 本目录是临时集成，不替代 SPEC 中 Raspberry Pi 正式网关。使用系统 Python 3 标准库（HTTP + SQLite）；相机可选使用系统 Python GI/GStreamer。无需 npm、pip 或云端资源。
 
+## 脚本导航：每个文件是干什么的
+
+本目录的 Python 脚本主要在 **Jetson 的终端**运行，不是在 Arduino IDE 中运行。`static/` 中的 JavaScript 则由浏览器自动运行。网页本身使用 Python 标准库；MQTT 还需要 Paho 和 Mosquitto，相机预览需要 GI/GStreamer 及对应解码插件。不要把“网页无需 pip”理解成整套系统不需要依赖。
+
+### 日常运行的脚本
+
+| 文件 | 用途／输入与输出 | 如何使用及注意事项 |
+| --- | --- | --- |
+| [run_mqtt.py](run_mqtt.py) | 同时启动 Mosquitto broker 和 `mqtt_receiver.py`，让 ESP 的 MQTT 日志进入数据库。读取本地 `data/mqtt/mosquitto.conf`；默认数据库为 `data/measurements.sqlite3`。 | `python3 run_mqtt.py`。日常启动 MQTT 的入口；使用它时不要再重复启动接收器。Ctrl+C 或 SIGTERM 会停止它启动的两个子进程，不会停止单独运行的网页服务。 |
+| [mqtt_receiver.py](mqtt_receiver.py) | 订阅两个节点的 `records`、`status` 主题，核对节点身份和传输字段，调用 `server.py` 中的 `Store` 保存原始日志与测量。数据库提交成功后才发应用层 ACK；拒收内容保存在 `mqtt_rejected`。 | 通常由 `run_mqtt.py` 启动。单独排查时可运行 `python3 mqtt_receiver.py`，前提是 broker 已运行且没有另一份接收器。它不负责网页和相机，也不直接读取 USB 串口。 |
+| [server.py](server.py) | 提供网页、状态／历史 API、CSV 导出和 SQLite 存储逻辑；后台检查节点网络状态，并把相机 RTSP 解码为 JPEG 供网页查看。另有仅本机可访问的 `/ingest` 接口。 | `python3 server.py --bind 192.168.88.249 --interface enP8p1s0`。相机地址从环境变量 `CAMERA_RTSP_URI` 读取，**不会自动加载 `.env`**。网页服务与 MQTT 接收器必须指向同一个数据库。 |
+
+### 配置与编译辅助脚本
+
+这些脚本不是每天都要运行。它们会生成或更新本地文件，但不会自动烧录 ESP。
+
+| 文件 | 用途／产生的文件 | 什么时候运行 |
+| --- | --- | --- |
+| [prepare_mqtt.py](prepare_mqtt.py) | 为两个节点和接收器生成 MQTT 账号、密码文件、ACL 和 broker 配置，存入私有的 `data/mqtt/`。已有账号密码会保留，只补缺失账号。 | 首次配置 broker，或核实需要重新生成配置时：`python3 prepare_mqtt.py --host 192.168.88.249`。需要 `mosquitto_passwd`；不会安装或启动 broker。更改地址前先确认 Jetson 实验室网卡地址。 |
+| [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持两个节点**：`python3 configure_node1.py --node 1` 或 `--node 2`。Node 2 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
+| [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1` 和 `--node 2`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
+| [camera_onvif.py](camera_onvif.py) | 向相机发送 ONVIF `GetStreamUri` 查询，取得 RTSP 地址并写入本地 `.env` 的 `CAMERA_RTSP_URI`。不修改相机设置。 | 相机网络可达后运行 `python3 camera_onvif.py`；默认 profile `001`，可用 `--profile` 指定。它只配置地址，不播放视频。`.env` 可能含账号密码，不得提交 GitHub；终端输出也应检查后再分享，目前脱敏没有覆盖 URI 中所有凭据格式。 |
+
+ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/script/DO_ORP_MQTT/) 和 [Node 2 MQTT 固件](../Node-2/script/Atlas_EC_pH_MQTT/)。上述配置／编译脚本只是帮助准备这两个程序。
+
+### 测试脚本
+
+| 文件 | 检查什么 | 运行方式与边界 |
+| --- | --- | --- |
+| [test_server.py](test_server.py) | 原始记录保存、缺值／错误不变成零、测量去重、同启动周期乱序、节点身份、HTTP 接口和数据库持久化。 | `python3 -m unittest -v test_server`。使用临时数据库和本机临时端口，不向实际 ESP 或相机发送命令；不等于现场链路验收。 |
+| [test_mqtt.py](test_mqtt.py) | ACK 在落库后发出、写盘失败不 ACK、重复／错误身份拒收、Node 2 路由、ACL 配置、积压读数过期，以及临时 broker 的收发和重连。 | `python3 -m unittest -v test_mqtt`。需要 Paho、密码工具及集成测试所指定的 `.codex-build/runtime/` broker。当前集成测试使用 Jetson Linux 运行环境，不能假定在未配置依赖的 Mac 上直接通过。 |
+
+以上命令均在本目录运行。运行全部 Python 测试可用 `python3 -m unittest -v`。测试使用临时数据，不要为了测试把模拟记录发进正式数据库。
+
+### 网页文件和私有配置
+
+| 文件／目录 | 用途 |
+| --- | --- |
+| [static/index.html](static/index.html) / [static/en.html](static/en.html) | 中文／英文网页结构，分别由 `/` 和 `/en` 提供。 |
+| [static/app.js](static/app.js) / [static/app_en.js](static/app_en.js) | 浏览器读取状态与历史 API、更新数值／QC／过期提示、绘制曲线、刷新相机图片；不直接连接 ESP 或 MQTT。 |
+| [static/style.css](static/style.css) | 两种语言页面的布局、颜色和显示样式。 |
+| [.env.example](.env.example) | 私有环境变量的填写模板；实际 `.env` 不提交。修改后需在启动 `server.py` 的终端加载环境，并重启该服务才生效。 |
+| `data/` | 运行时数据库、日志、PID 和 MQTT 私有配置；由 `.gitignore` 排除，不是可随意删除的缓存。 |
+| `../../.codex-build/` | 本地依赖、编译产物及设备备份等；不随 GitHub 同步，换电脑后需要另外准备。 |
+
+### 最容易混淆的三件事
+
+1. **看数据需要两个服务**：`run_mqtt.py` 负责 MQTT 入库，`server.py` 负责网页／相机；只开网页不会自动从 ESP 的 IP 抓取传感器读数。
+2. **配置不等于部署**：`configure_node1.py` 只写配置，`build_node1.py` 只编译；都不会替你烧录 ESP。
+3. **联网不等于数据有效**：相机 ping 通不等于视频成功；测量收到也不等于完成校准或 UTC 同步，仍需保留并查看 QC 与时钟状态。
+
 ## 当前状态（2026-09-27）
 
 **Node 1、Node 2 和相机都已实时接入。** 中文页 `http://192.168.88.249:8080`，英文页 `http://192.168.88.249:8080/en`（仅实验室局域网）。
