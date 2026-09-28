@@ -182,6 +182,8 @@ RDO Blue 和 ORP 用两套 Waveshare TTL TO RS485 (B)/UART，因为串口设置�
 
 ### 8.4 EZO-PMP
 
+> **2026-09-27 起泵部分由 DECISION 048 取代：** 已购买的 EZO-PMP 改用 UART 接单独的 ESP32（`lab_scale/pump-node-1/`）。下面的隔离 I2C 设计保留作以后流量计的参考。
+
 | 线号 | 连接 | 说明 |
 |---|---|---|
 | N4-P01/P02 | `+12V_BYPASS/SGND12` → 泵电机 `+/-` | 独立 1 A；核实防呆插头极性。 |

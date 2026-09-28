@@ -9,9 +9,10 @@
 ## 当前状态（2026-09-26）
 
 - 板上程序：[script/DO_ORP_MQTT/](script/DO_ORP_MQTT/)（`firmware=node01-mqtt-0.1`），通过实验室 2.4 GHz Wi-Fi → MQTT 把整行日志发到 Jetson（192.168.88.249:1883），Jetson 落库后再回 ACK。
-- 供电：ESP32 由 USB 充电头 5 V 供电（已离开 Jetson USB）；探头仍由独立 12 V 适配器供电。
+- 供电：ESP32 经 USB Type-C 直接接电源适配器（5 V，用户 2026-09-27 确认；已离开 Jetson USB）；探头仍由独立 12 V 适配器供电。适配器型号、额定输出未记录。
 - 已实测：数据进入 Jetson SQLite 与网页；Jetson 接收端中断 25 s 后补发、无缺口；换电源重启后约 18 s 自动恢复上传。
 - 容量与限制条件见 [script/DO_ORP_MQTT/README.md](script/DO_ORP_MQTT/README.md#容量与限制条件)。
+- 2026-09-27：Jetson 重启后服务未自启，12:42–16:42 EDT 的数据未被接收（超出 80 s RAM 缓冲）；服务恢复后节点自动重连，当晚网关核对在线、MAC 一致、数据实时。
 - 未完成：UTC 同步、断电持久缓存、路由器/Wi-Fi 中断测试、长时间运行、探头校准验证。
 
 ## 方法与原理

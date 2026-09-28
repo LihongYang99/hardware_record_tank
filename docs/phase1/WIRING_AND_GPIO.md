@@ -220,6 +220,8 @@ Wire by the numbered PicoBlade/pigtail pin, not by an unverified color.
 
 ### 7.4 EZO-PMP
 
+> **2026-09-27 — superseded for the pump by DECISION 048:** the purchased EZO-PMP uses UART on its own ESP32 (`lab_scale/pump-node-1/`). The isolated I2C design below remains the reference for a future flow meter.
+
 The pump’s motor input and five-wire data/control cable are separate.
 
 | Wire ID | From | To | Note |

@@ -45,3 +45,25 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 实板：两个节点数据实时入库，无拒收、无序号缺口；Jetson 接收端中断 25 s 后补发无缺口；Node 1 换电源重启后自动恢复。
 - 相机：IP↔MAC 核对；GStreamer 软/硬件解码均出画面；网页 API 与日志不含视频地址。
 - 未验证：UTC、断电持久缓存、路由器/Wi-Fi 中断、长时间运行、校准。
+
+# 2026-09-27 — 新增 pump-node-1（旁路蠕动泵，总 Node 4）
+
+## 变更
+
+- 用户已购买 Atlas EZO-PMP，决定单独一块 ESP32、UART 通信；记录为 DECISION 048（036 标为已取代，OPEN-09 暂定解决），SPEC 升为 0.3（§5 NODE 04、§31）。Phase-1 的 WIRING/BYPASS 文档（中英文）加注指向 048。
+- 新目录 `lab_scale/pump-node-1/`：README（含方法与原理）、HARDWARE、WIRING、COMMUNICATION、PROGRESS、固件 `script/PMP_MQTT/`、主机测试 `tests/`。`Telemetry.h`、`BenchLog.h` 从 Node-2 逐字节复制。
+- Jetson：node04 加入 `prepare_mqtt.py`、`mqtt_receiver.py`、`server.py`、`configure_node1.py`、`build_node1.py`；中英文网页新增"04 / 旁路泵"面板（运行中/已停止、电机电压、累计体积，只读）。
+
+## 验证
+
+- 泵主机测试通过（g++，ASan/UBSan，无警告）；Python 测试 16 项通过。
+- ESP32 编译：`--check` 通过；填入虚拟 MAC 的完整编译 912,103 B（69%）。未烧录，未接实物。
+
+# 2026-09-27 傍晚 — pump-node-1 烧录与操作控制
+
+- 泵节点 ESP32（MAC 7C:4F:AD:B5:33:38）备份并烧录 0.1；修正控制板电源接线后通信成功；真实日志存 `pump-node-1/SAMPLE_LOG.md`。泵报告未校准时恒定流量上限 54.66 mL/min，原定 80 mL/min 不可行。
+- 用户决定自己控制开关和流速：固件 0.2 加 MQTT 操作命令（白名单、去重、NVS 保存设定、默认不转）；Jetson 新增 `pump_ctl.py` 与 `pump-operator` 账号；网页加"设定流量"。DECISION 048 第 4 条同步修改。
+- Jetson 14:12 EDT 重启后服务未自启，12:42–16:42 EDT 无数据，已记入 lab_scale README。
+- 用户要求网页控制泵：最终方案为单独的登录控制页 `/control`（个人账号、会话 cookie、锁定、只允许启动/停止），监控页保持只读无需登录。`pump_ctl.py` 新增 `web-user` 账号管理与共用的 `execute()`。
+- 控制页改为多设备"设备控制台"（设备登记在 `pump_ctl.DEVICES`，接口 `/api/control`），泵命名为泵 1 / Pump 1；中文 `/control`，英文 `/control/en`（共用 `control.js`）。各 README 按 2026-09-27 晚实际状态更新：泵 1 已烧录校准、Node 1/2 经 Type-C 接电源适配器、Jetson 重启后无自启导致约 4 小时数据缺口、相机恢复 LIVE。
+- 调试过程入档：pump-node-1 README 新增"调试过程"表（15 项：演示灯、`--check` 体积假象、泵板没上电、欠压拒绝、80 mL/min 超上限、校准被拒、两种校准独立、shell 尖括号、停泵方式、固件复查、设定流量卡片空、控制页三版、中英文、Jetson 无自启）；jetson_web README 新增"泵 1 接入与设备控制页"段（账号/ACL、命令通道、三版控制页、接收器需随参数表重启、测试迭代、服务重启时间）；CLAUDE.md 加"改参数表后两个服务都要重启"。用户 20:21 / 20:28 EDT 重启两服务后设定流量入库、英文控制页生效。

@@ -77,6 +77,17 @@ class MQTTTests(unittest.TestCase):
                 accept_record(self.store, payload, node)
         self.assertEqual(self.store.latest()[1]['measurements'], 1)
 
+    def test_pump_node_routed_by_topic_and_cannot_impersonate(self):
+        line = (b'node_id=shrimp-node04 boot_id=00112233aabbccdd sensor=PUMP_ATLAS_PMP seq=1 cycle=1 UTC=UNSYNCED '
+                b'pump_on=1 int_pin=1 motor_V=12.10 total_volume_mL=5.25 target_mL_min=50.00 COMM=OK QC=UNVALIDATED '
+                b'transport_boot_id=00112233aabbccdd transport_seq=7 firmware=node04-pump-mqtt-0.1 transport_age_ms=2 network_buffered=0')
+        self.assertEqual(accept_record(self.store, line, 'shrimp-node04'), '00112233aabbccdd:7')
+        self.assertEqual(self.store.latest()[1]['measurements'], 4)
+        for node in ('shrimp-node01', 'shrimp-node02'):
+            with self.assertRaises(ValueError):
+                accept_record(self.store, line, node)
+        self.assertEqual(self.store.latest()[1]['measurements'], 4)
+
     def test_acl_isolates_each_node(self):
         credentials = prepare(Path(self.temp.name)/'mqtt', '127.0.0.2')
         self.assertIn('shrimp-node02', credentials)
@@ -84,6 +95,18 @@ class MQTTTests(unittest.TestCase):
         node2 = next(block for block in acl if block.startswith('shrimp-node02'))
         self.assertIn('topic write shrimp/lab/shrimp-node02/records', node2)
         self.assertNotIn('shrimp-node01', node2)
+        pump = next(block for block in acl if block.startswith('shrimp-node04'))
+        self.assertIn('topic write shrimp/lab/shrimp-node04/records', pump)
+        self.assertIn('topic read shrimp/lab/shrimp-node04/ack', pump)
+        self.assertNotIn('shrimp-node01', pump)
+        self.assertNotIn('shrimp-node02', pump)
+        self.assertIn('topic read shrimp/lab/shrimp-node04/cmd', pump)
+        self.assertNotIn('/cmd', next(block for block in acl if block.startswith('shrimp-node01')))
+        operator = next(block for block in acl if block.startswith('pump-operator'))
+        self.assertEqual(operator.strip().splitlines()[1:], ['topic write shrimp/lab/shrimp-node04/cmd'])
+        self.assertNotIn('/cmd', next(block for block in acl if block.startswith('jetson-receiver')))
+        # Re-running keeps passwords already flashed into nodes.
+        self.assertEqual(prepare(Path(self.temp.name)/'mqtt', '127.0.0.2'), credentials)
 
     def test_retry_is_idempotent_and_buffered_data_is_stale_in_api(self):
         self.assertEqual(accept_record(self.store, packet(age=60000)), '0123456789abcdef:1')
@@ -147,6 +170,76 @@ class MQTTTests(unittest.TestCase):
             publisher.disconnect();publisher.loop_stop()
             receiver.client.disconnect();receiver.client.loop_stop()
             process.terminate();process.wait(timeout=5)
+
+
+    def test_pump_commands_only_from_operator_and_whitelisted(self):
+        import argparse, pump_ctl
+        ns = lambda **kw: argparse.Namespace(**kw)
+        self.assertEqual(pump_ctl.pump_command(ns(action='start', rate=pump_ctl.amount(0.5, 105)('50'))), 'DC,50.00,*')
+        self.assertEqual(pump_ctl.pump_command(ns(action='dispense', ml='10.00', minutes=None)), 'D,10.00')
+        self.assertEqual(pump_ctl.pump_command(ns(action='dispense', ml='10.00', minutes='1.00')), 'D,10.00,1.00')
+        self.assertEqual(pump_ctl.pump_command(ns(action='query', what='maxrate')), 'DC,?')
+        for bad in ('200', '-5', 'nan', 'inf', '0'):
+            with self.assertRaises(argparse.ArgumentTypeError):
+                pump_ctl.amount(0.5, 105)(bad)
+        self.assertEqual(pump_ctl.operator_name('li hong/yang'), 'li_hong_yang')
+        # Calibration is refused unless the last operator command was a dispense that finished without a reset.
+        base = 'node_id=shrimp-node04 boot_id=b sensor=PUMP_ATLAS_PMP '
+        def log(*lines):
+            for line in lines:
+                self.store.ingest('shrimp-node04', base + line)
+        with sqlite3.connect(self.store.path) as db:
+            self.assertIsNone(pump_ctl.last_dispense(db))
+            log('event=OPERATOR_DONE cmd_id=1 operator=li command=Cal,9.80 result=ER reply=NONE')
+            self.assertIsNone(pump_ctl.last_dispense(db))
+            log('event=OPERATOR_DONE cmd_id=2 operator=li command=D,10.00 result=OK reply=NONE')
+            self.assertIsNone(pump_ctl.last_dispense(db))
+            log('event=DISPENSE_DONE seq=1 cycle=1')
+            self.assertEqual(pump_ctl.last_dispense(db), 'D,10.00')
+            log('event=OPERATOR_DONE cmd_id=3 operator=li command=D,10.00 result=OK reply=NONE', 'event=PUMP_RESET seq=1 cycle=1', 'event=DISPENSE_DONE seq=1 cycle=1')
+            self.assertIsNone(pump_ctl.last_dispense(db))
+        broker = RUNTIME / 'usr/sbin/mosquitto'
+        directory = Path(self.temp.name)/'mqtt'
+        credentials = prepare(directory, '127.0.0.2')
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0)); port = probe.getsockname()[1]
+        config = directory/'mosquitto.conf'
+        config.write_text(config.read_text().replace('listener 1883 127.0.0.1', f'listener {port} 127.0.0.1').replace('listener 1883 127.0.0.2\n', ''))
+        env = dict(os.environ, LD_LIBRARY_PATH=str(RUNTIME/'usr/lib/aarch64-linux-gnu'))
+        with (directory/'test.log').open('w') as log:
+            process = subprocess.Popen([str(broker), '-c', str(config)], env=env, stdout=log, stderr=log)
+        node = mqtt.Client('node04-command-test')
+        node.username_pw_set('shrimp-node04', credentials['shrimp-node04'])
+        received, subscribed = [], threading.Event()
+        node.on_connect = lambda c, u, f, rc: c.subscribe('shrimp/lab/shrimp-node04/cmd', 1)
+        node.on_subscribe = lambda *a: subscribed.set()
+        node.on_message = lambda c, u, m: received.append(m.payload)
+        try:
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    node.connect('127.0.0.1', port); break
+                except ConnectionRefusedError:
+                    if time.monotonic() > deadline: raise
+                    time.sleep(.05)
+            node.loop_start()
+            self.assertTrue(subscribed.wait(5))
+            for account in ('shrimp-node01', 'jetson-receiver', 'shrimp-node04'):
+                intruder = mqtt.Client(f'{account}-intruder')
+                intruder.username_pw_set(account, credentials[account])
+                intruder.connect('127.0.0.1', port); intruder.loop_start()
+                intruder.publish('shrimp/lab/shrimp-node04/cmd', b'id=1 operator=x cmd=X', qos=1).wait_for_publish()
+                intruder.disconnect(); intruder.loop_stop()
+            args = argparse.Namespace(credentials=str(directory/'credentials.json'), host='127.0.0.1', port=port)
+            pump_ctl.publish(args, 'id=2 operator=li cmd=DC,50.00,*')
+            deadline = time.monotonic() + 3
+            while not received and time.monotonic() < deadline:
+                time.sleep(.05)
+            time.sleep(.3)
+            self.assertEqual(received, [b'id=2 operator=li cmd=DC,50.00,*'])
+        finally:
+            node.disconnect(); node.loop_stop()
+            process.terminate(); process.wait(timeout=5)
 
 
 if __name__ == '__main__':

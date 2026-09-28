@@ -13,7 +13,7 @@
    - 从**主题**判断是哪个节点（因为 ACL 保证节点只能写自己的主题），再核对记录里的 `node_id`、`boot_id`、`transport_seq` 等字段与主题一致；
    - 不合格（身份冲突、重复键、序号非法、超长）就原文存进 `mqtt_rejected` 表，**不回 ACK**；
    - 合格就交给 `server.py` 里的 `Store.ingest` 写 SQLite；事务提交后才向 `shrimp/lab/<节点>/ack` 发 `boot_id:transport_seq`。
-3. **网页服务 `server.py`**。提供中文页 `/`、英文页 `/en`、状态和历史 API、CSV 导出；后台线程把相机 RTSP 解码成 JPEG，另一线程检查节点网络状态。对局域网只读；另有一个只监听 `127.0.0.1:8766` 的 `POST /ingest` 供本机桥接程序使用。
+3. **网页服务 `server.py`**。提供中文页 `/`、英文页 `/en`、状态和历史 API、CSV 导出；后台线程把相机 RTSP 解码成 JPEG，另一线程检查节点网络状态。对局域网只读；另有一个只监听 `127.0.0.1:8766` 的 `POST /ingest` 供本机桥接程序使用。带 `--pump-control` 启动时另有需要登录的设备控制页 `/control`、`/control/en`（见下文"2026-09-27 晚：泵 1 接入与设备控制页"）。
 
 数据库是一个 SQLite 文件 `data/measurements.sqlite3`（WAL 模式），主要有四张表：
 
@@ -56,12 +56,13 @@
 
 | 文件 | 用途／产生的文件 | 什么时候运行 |
 | --- | --- | --- |
-| [prepare_mqtt.py](prepare_mqtt.py) | 为两个节点和接收器生成 MQTT 账号、密码文件、ACL 和 broker 配置，存入私有的 `data/mqtt/`。已有账号密码会保留，只补缺失账号。 | 首次配置 broker，或核实需要重新生成配置时：`python3 prepare_mqtt.py --host 192.168.88.249`。需要 `mosquitto_passwd`；不会安装或启动 broker。更改地址前先确认 Jetson 实验室网卡地址。 |
-| [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持两个节点**：`python3 configure_node1.py --node 1` 或 `--node 2`。Node 2 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
-| [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1` 和 `--node 2`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
+| [prepare_mqtt.py](prepare_mqtt.py) | 为各节点（含 pump-node-1 的 `shrimp-node04`）和接收器生成 MQTT 账号、密码文件、ACL 和 broker 配置，存入私有的 `data/mqtt/`。已有账号密码会保留，只补缺失账号。 | 首次配置 broker，或核实需要重新生成配置时：`python3 prepare_mqtt.py --host 192.168.88.249`。需要 `mosquitto_passwd`；不会安装或启动 broker。更改地址前先确认 Jetson 实验室网卡地址。 |
+| [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持三个节点**：`python3 configure_node1.py --node 1`、`--node 2` 或 `--node 4`（pump-node-1）。Node 2 / 4 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
+| [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1`、`--node 2` 和 `--node 4`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
+| [pump_ctl.py](pump_ctl.py) | 旁路泵（pump-node-1）的操作工具：`start <mL/min>`、`stop`、`dispense`、`calibrate`、`query`、`show`、`web-user add|remove|list`（控制页账号）。控制页 `/control` 的登录与执行也在这里的 `WebControl`。经 MQTT 账号 `pump-operator` 发一条带编号的命令，等泵节点的回复写进数据库后显示结果；每条命令记入 `operator_event` 表。 | 需要时在本目录运行，例如 `python3 pump_ctl.py show`。校准必须加 `--note`。步骤见 [pump-node-1 README](../pump-node-1/README.md#控制与校准jetson-终端)。节点离线时命令会被丢弃，不会稍后执行。 |
 | [camera_onvif.py](camera_onvif.py) | 向相机发送 ONVIF `GetStreamUri` 查询，取得 RTSP 地址并写入本地 `.env` 的 `CAMERA_RTSP_URI`。不修改相机设置。 | 相机网络可达后运行 `python3 camera_onvif.py`；默认 profile `001`，可用 `--profile` 指定。它只配置地址，不播放视频。`.env` 可能含账号密码，不得提交 GitHub；终端输出也应检查后再分享，目前脱敏没有覆盖 URI 中所有凭据格式。 |
 
-ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/script/DO_ORP_MQTT/) 和 [Node 2 MQTT 固件](../Node-2/script/Atlas_EC_pH_MQTT/)。上述配置／编译脚本只是帮助准备这两个程序。
+ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/script/DO_ORP_MQTT/)、[Node 2 MQTT 固件](../Node-2/script/Atlas_EC_pH_MQTT/) 和 [pump-node-1 固件](../pump-node-1/script/PMP_MQTT/)。上述配置／编译脚本只是帮助准备这些程序。
 
 ### 测试脚本
 
@@ -77,21 +78,25 @@ ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/sc
 | 文件／目录 | 用途 |
 | --- | --- |
 | [static/index.html](static/index.html) / [static/en.html](static/en.html) | 中文／英文网页结构，分别由 `/` 和 `/en` 提供。 |
+| [static/control.html](static/control.html) / [static/control_en.html](static/control_en.html) / [static/control.js](static/control.js) | 设备控制页：中文 `/control`，英文 `/control/en`（共用 `control.js`，右上角可切换）。登录后按设备列出（目前泵 1），显示状态、启动/改流速、停止和最近操作。设备清单在 `pump_ctl.py` 的 `DEVICES`，新设备按种类（目前只有 `pump`）生成卡片。只有带 `--pump-control` 启动时才可用；登录用会话 cookie（HttpOnly、SameSite=Strict，30 分钟无操作过期）。 |
 | [static/app.js](static/app.js) / [static/app_en.js](static/app_en.js) | 浏览器读取状态与历史 API、更新数值／QC／过期提示、绘制曲线、刷新相机图片；不直接连接 ESP 或 MQTT。 |
 | [static/style.css](static/style.css) | 两种语言页面的布局、颜色和显示样式。 |
 | [.env.example](.env.example) | 私有环境变量的填写模板；实际 `.env` 不提交。修改后需在启动 `server.py` 的终端加载环境，并重启该服务才生效。 |
 | `data/` | 运行时数据库、日志、PID 和 MQTT 私有配置；由 `.gitignore` 排除，不是可随意删除的缓存。 |
 | `../../.codex-build/` | 本地依赖、编译产物及设备备份等；不随 GitHub 同步，换电脑后需要另外准备。 |
 
-### 最容易混淆的三件事
+### 最容易混淆的四件事
 
 1. **看数据需要两个服务**：`run_mqtt.py` 负责 MQTT 入库，`server.py` 负责网页／相机；只开网页不会自动从 ESP 的 IP 抓取传感器读数。
 2. **配置不等于部署**：`configure_node1.py` 只写配置，`build_node1.py` 只编译；都不会替你烧录 ESP。
 3. **联网不等于数据有效**：相机 ping 通不等于视频成功；测量收到也不等于完成校准或 UTC 同步，仍需保留并查看 QC 与时钟状态。
+4. **改了参数表要重启两个服务**：`server.py` 里的 `NODES`/`SENSORS` 改了之后，`run_mqtt.py` 也要重启（接收器启动时导入这张表），否则新参数只留在 `raw_log`，`measurement` 表和网页卡片没有值（2026-09-27 "设定流量"卡片空了几个小时就是这个原因）。新增 broker 账号同样要 `kill -HUP` broker 或重启 `run_mqtt.py`。
 
 ## 当前状态（2026-09-27）
 
-**Node 1、Node 2 和相机都已实时接入。** 中文页 `http://192.168.88.249:8080`，英文页 `http://192.168.88.249:8080/en`（仅实验室局域网）。
+**Node 1、Node 2、泵 1 和相机都已实时接入。** 监控页（只读、不需要登录）：中文 `http://192.168.88.249:8080`，英文 `/en`；设备控制页（需要账号登录）：中文 `/control`，英文 `/control/en`（仅实验室局域网）。
+
+**Jetson 重启后这些服务不会自己启动**（2026-09-27 实际发生：14:12 EDT 重启后约 4 小时没有接收数据），重启后要重新执行下面的完整启动顺序。
 
 实验室外访问：学校 Cisco VPN + `ssh -L 8080:192.168.88.249:8080 lihongyang2026@10.141.48.128`，然后打开 `http://localhost:8080`。详见 [../../jetson_setting/REMOTE_ACCESS.md](../../jetson_setting/REMOTE_ACCESS.md)。
 
@@ -101,8 +106,10 @@ ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/sc
 sudo ip addr add 192.168.1.200/24 dev enP8p1s0      # 相机网段，每次重启/重插网线后
 nohup python3 -u run_mqtt.py > data/mqtt.log 2>&1 & echo $! > data/mqtt.pid
 set -a; . ./.env; set +a
-nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/server.log 2>&1 & echo $! > data/server.pid
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 --pump-control > data/server.log 2>&1 & echo $! > data/server.pid
 # 停止：kill "$(cat data/mqtt.pid)" "$(cat data/server.pid)"
+# --pump-control：开启需要登录的控制页 /control（启动/改流速、停止）；账号用 python3 pump_ctl.py web-user add <账号> 创建。监控页 / 仍然只读。
+# 只在正式服务上加；调试用的 8081 不要加，否则会控制真实的泵。
 ```
 
 下方按日期保留历史记录；较早段落里“尚未接入”等描述已被后面的日期段落取代。
@@ -278,3 +285,14 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 ## 2026-09-27：英文页面
 
 `http://192.168.88.249:8080/en`：给外国访客看的全英文页面（`static/en.html` + `static/app_en.js`，共用 `style.css` 和同一套 API）。显示内容、QC 规则和“未校准 / UTC 未同步”提示与中文页一致，另加一段英文系统说明。两个页面右上角可以互相切换。接口新增语言无关的 `camera.code`（`LIVE` / `CONNECTING` / `RETRYING` / `NOT_CONFIGURED` / `NO_GSTREAMER`），英文页据此显示相机状态；传感器名称按 `sensor/parameter` 在前端翻译。
+
+## 2026-09-27 晚：泵 1 接入与设备控制页
+
+网关侧为泵 1（pump-node-1，`shrimp-node04`）增加的内容和当天的调试过程。泵节点本身（接线、校准）的过程见 [pump-node-1 README](../pump-node-1/README.md#调试过程2026-09-27摘要)。
+
+1. **账号与 ACL**。`prepare_mqtt.py --host 192.168.88.249` 再跑一次：新增 `shrimp-node04`（只能写自己的 `records`/`status`，读自己的 `cmd`）和 `pump-operator`（只能写 `shrimp/lab/shrimp-node04/cmd`）；原有账号的密码哈希不变。运行中的 broker 不会自动读新账号，要 `kill -HUP` broker 或重启 `run_mqtt.py`。自动测试在真实 broker 上验证：只有 `pump-operator` 能写 `cmd`。
+2. **命令通道**。`pump_ctl.py` 用 `pump-operator` 账号发一条 `id=<编号> operator=<名> cmd=<命令>`，然后轮询数据库等节点回来的 `OPERATOR_DONE` 行，不是等 MQTT PUBACK；节点离线时命令丢弃，不会稍后执行。每条命令、操作人、备注、泵的原文回复记在 `operator_event` 表；校准命令另记校准前后的 `?CAL` 和 `?MAXRATE`。
+3. **网页控制在同一天改了三版**：① 监控页泵面板加"操作密码 + 启动/停止"（写完未启用）；② 用户提出监控不该要登录、控制要账号密码：改为单独的 `/control` 登录页（个人账号 `pump_ctl.py web-user add`，加盐 PBKDF2，内存会话 cookie，30 分钟无操作过期，5 次错误锁 60 秒）；③ 用户提出以后有多台设备：改成"设备控制台"，设备登记在 `pump_ctl.DEVICES`，泵叫泵 1 / Pump 1，接口 `POST /api/control {device, action, rate}`；最后按用户要求补英文页 `/control/en`（共用 `control.js`，按页面语言选文字）。
+4. **"设定流量"卡片一直空**。原因：`run_mqtt.py` 16:42 EDT 启动时 `server.py` 的 SENSORS 还没有 `target_mL_min`；接收器启动时导入参数表，之后改了不会跟着变，所以原始行里有、`measurement` 表里没有。控制页临时改为从状态行的原始字段读设定；20:21 EDT 用户重启接收器后（00:21:49Z 起）设定流量正常入库。
+5. **测试迭代**。锁定测试最初写成 4 次失败即锁，实际是成功登录清零计数、连续 5 次失败才锁，按设计改测试；`control.js` 一个内层变量与外层的电压变量同名，改名。最终 18 项通过（新增：未开启 403、未登录 401、错密码 / 不存在账号 401、锁定 429、cookie 属性、伪造 cookie、JSON / 范围 / 动作校验、登出、删账号会话立即失效、真实 broker ACL）。每一版控制页都用无头浏览器截图核对过排版。
+6. **服务重启**（用户操作，`ps` 核对）：`run_mqtt.py` 20:21:46 EDT；`server.py … --pump-control` 20:27:59 EDT。中英文控制页均可用；登录会话在内存里，网页重启后要重新登录。`--pump-control` 只加在正式服务上，8081 调试实例不加。

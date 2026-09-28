@@ -14,6 +14,7 @@ import subprocess
 import threading
 import time
 from datetime import datetime, timezone
+from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlsplit
 
@@ -21,12 +22,16 @@ ROOT = Path(__file__).resolve().parent
 NODES = {
     'shrimp-node01': {'name': 'Node 1 · DO / ORP', 'ip': '192.168.88.252', 'mac': '44:b1:76:ce:d1:a8'},
     'shrimp-node02': {'name': 'Node 2 · EC / pH', 'ip': '192.168.88.251', 'mac': '44:b1:76:cc:d4:84'},
+    'shrimp-node04': {'name': 'Pump 1 · 泵 1', 'ip': '192.168.88.248', 'mac': '7c:4f:ad:b5:33:38'},
 }
 SENSORS = {
     'DO_SEN0681': ('shrimp-node01', 'DFRobot SEN0681', [('DO_mg_L', 'DO', 'mg/L'), ('saturation_pct', '饱和度', '%'), ('temperature_C', 'DO 温度', '°C')]),
     'ORP_SEN0709': ('shrimp-node01', 'DFRobot SEN0709', [('ORP_mV', 'ORP', 'mV'), ('temperature_C', 'ORP 温度', '°C')]),
     'EC_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-EC', [('EC_uS_cm', 'EC', 'µS/cm'), ('salinity_PSU', '盐度', 'PSU')]),
     'PH_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-pH', [('pH', 'pH', 'pH')]),
+    # pump_on is the controller's own report (D,?), not proof of water flow.
+    'PUMP_ATLAS_PMP': ('shrimp-node04', 'Atlas EZO-PMP', [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
+                                                         ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]),
 }
 
 
@@ -226,6 +231,8 @@ class Network:
     def run(self):
         while True:
             for node, config in NODES.items():
+                if not config['ip']:
+                    continue
                 reachable = False
                 identity = False
                 try:
@@ -244,7 +251,7 @@ class Network:
             return dict(self.states)
 
 
-def handler_for(store, camera, network, ingest_only=False):
+def handler_for(store, camera, network, ingest_only=False, pump=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass
@@ -253,10 +260,13 @@ def handler_for(store, camera, network, ingest_only=False):
             super().setup()
             self.connection.settimeout(10)
 
-        def send(self, content, kind='application/json; charset=utf-8', status=200):
+        def send(self, content, kind='application/json; charset=utf-8', status=200, cookie=None):
             if not isinstance(content, bytes):
                 content = json.dumps(content, ensure_ascii=False, allow_nan=False).encode()
             self.send_response(status)
+            if cookie is not None:
+                # Session cookie for the /control page only; never readable by page scripts or sent cross-site.
+                self.send_header('Set-Cookie', f'pump_session={cookie}; HttpOnly; SameSite=Strict; Path=/; Max-Age={43200 if cookie else 0}')
             self.send_header('Content-Type', kind)
             self.send_header('Content-Length', str(len(content)))
             self.send_header('Cache-Control', 'no-store')
@@ -265,7 +275,70 @@ def handler_for(store, camera, network, ingest_only=False):
             self.end_headers()
             self.wfile.write(content)
 
+        def session_token(self):
+            try:
+                morsel = SimpleCookie(self.headers.get('Cookie', '')).get('pump_session')
+            except CookieError:
+                return None
+            return morsel.value if morsel else None
+
+        def json_body(self):
+            # JSON only: a cross-site HTML form cannot send it without a CORS preflight, which this server never grants.
+            if self.headers.get('Content-Type', '').split(';')[0].strip().lower() != 'application/json':
+                raise TypeError('JSON required')
+            length = int(self.headers.get('Content-Length', '0'))
+            if not 0 < length <= 1024:
+                raise ValueError('Invalid body length')
+            body = json.loads(self.rfile.read(length))
+            if not isinstance(body, dict):
+                raise ValueError('Expected object')
+            return body
+
+        def control_post(self):
+            if pump is None:
+                return self.send({'error': 'NOT_ENABLED'}, status=403)
+            try:
+                body = self.json_body()
+            except TypeError:
+                return self.send({'error': 'JSON required'}, status=415)
+            except ValueError:
+                return self.send({'error': 'Invalid request'}, status=400)
+            if self.path == '/api/logout':
+                pump.logout(self.session_token())
+                return self.send({'user': None}, cookie='')
+            if self.path == '/api/login':
+                name, password = body.get('username'), body.get('password')
+                if not isinstance(name, str) or not isinstance(password, str) or not 0 < len(name) <= 20 or len(password) > 128:
+                    return self.send({'error': 'Invalid request'}, status=400)
+                verdict, token = pump.login(name, password)
+                if verdict != 'OK':
+                    return self.send({'error': verdict}, status={'LOCKED': 429, 'NO_USERS': 403}.get(verdict, 401))
+                return self.send({'user': name}, cookie=token)
+            user = pump.user(self.session_token())
+            if not user:
+                return self.send({'error': 'LOGIN_REQUIRED'}, status=401)
+            device, action = body.get('device'), body.get('action')
+            try:
+                if not isinstance(device, str) or pump.kind(device) != 'pump':
+                    raise ValueError('Unknown device')
+                if action == 'start':
+                    rate = float(body['rate'])
+                    if not math.isfinite(rate) or not 0.5 <= rate <= 105:
+                        raise ValueError('Rate out of range')
+                    command = f'DC,{rate:.2f},*'
+                elif action == 'stop':
+                    command = 'X'
+                else:
+                    raise ValueError('Unknown action')
+            except (ValueError, TypeError, KeyError):
+                return self.send({'error': 'Invalid request'}, status=400)
+            result = pump.run(device, command, user)
+            status = {'BUSY': 409, 'BROKER_UNAVAILABLE': 503, 'NO_REPLY': 504}.get(result['result'], 200)
+            return self.send(dict(result, device=device, command=command), status=status)
+
         def do_POST(self):
+            if not ingest_only and self.path in ('/api/login', '/api/logout', '/api/control'):
+                return self.control_post()
             if not ingest_only or self.path != '/ingest':
                 return self.send({'error': 'Read-only dashboard'}, status=405)
             try:
@@ -300,6 +373,14 @@ def handler_for(store, camera, network, ingest_only=False):
                                       'metadata_configured': bool(os.getenv('TANK_ID') and os.getenv('EXPERIMENT_ID')),
                                       'series': [{'sensor': sensor, 'parameter': p, 'label': label, 'unit': unit, 'node': data[0]}
                                                  for sensor, data in SENSORS.items() for p, label, unit in data[2]]})
+                if parsed.path == '/api/session':
+                    if not pump:
+                        return self.send({'enabled': False, 'reason': 'NOT_ENABLED', 'user': None, 'devices': []})
+                    return self.send(dict(pump.status(), user=pump.user(self.session_token()), devices=pump.devices()))
+                if parsed.path == '/api/control/events':
+                    if not (pump and pump.user(self.session_token())):
+                        return self.send({'error': 'LOGIN_REQUIRED'}, status=401)
+                    return self.send(pump.events())
                 if parsed.path == '/api/history':
                     return self.send(store.history(query.get('sensor', [''])[0], query.get('parameter', [''])[0]))
                 if parsed.path == '/camera.jpg':
@@ -331,7 +412,9 @@ def handler_for(store, camera, network, ingest_only=False):
                     with store.connect() as db:
                         return self.send([dict(row) for row in db.execute('SELECT * FROM issue ORDER BY id DESC LIMIT 100')])
                 files = {'/': ('index.html', 'text/html; charset=utf-8'), '/app.js': ('app.js', 'text/javascript'), '/style.css': ('style.css', 'text/css'),
-                         '/en': ('en.html', 'text/html; charset=utf-8'), '/app_en.js': ('app_en.js', 'text/javascript')}
+                         '/en': ('en.html', 'text/html; charset=utf-8'), '/app_en.js': ('app_en.js', 'text/javascript'),
+                         '/control': ('control.html', 'text/html; charset=utf-8'), '/control/en': ('control_en.html', 'text/html; charset=utf-8'),
+                         '/control.js': ('control.js', 'text/javascript')}
                 if parsed.path in files:
                     name, kind = files[parsed.path]
                     return self.send((ROOT / 'static' / name).read_bytes(), kind)
@@ -352,11 +435,17 @@ def main():
     parser.add_argument('--ingest-port', type=int, default=8766)
     parser.add_argument('--interface', default='enP8p1s0')
     parser.add_argument('--db', default=str(ROOT / 'data' / 'measurements.sqlite3'))
+    parser.add_argument('--pump-control', action='store_true',
+                        help='Enable the login-protected device control page /control (production only; commands reach real devices)')
     args = parser.parse_args()
     os.umask(0o077)
     Path(args.db).parent.mkdir(parents=True, exist_ok=True)
     store, camera, network = Store(args.db), Camera(), Network(args.interface)
-    public = ThreadingHTTPServer((args.bind, args.port), handler_for(store, camera, network))
+    pump = None
+    if args.pump_control:
+        import pump_ctl
+        pump = pump_ctl.WebControl(args.db, argparse.Namespace(credentials=str(ROOT / 'data/mqtt/credentials.json'), host='127.0.0.1', port=1883))
+    public = ThreadingHTTPServer((args.bind, args.port), handler_for(store, camera, network, pump=pump))
     local = ThreadingHTTPServer(('127.0.0.1', args.ingest_port), handler_for(store, camera, network, True))
     (Path(args.db).parent / 'server.pid').write_text(str(os.getpid()) + '\n')
     for target in (local.serve_forever, camera.run, network.run):

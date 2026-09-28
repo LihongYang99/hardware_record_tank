@@ -10,7 +10,9 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent
-NODES = ('shrimp-node01', 'shrimp-node02')
+NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04')
+# Only these nodes accept operator commands, and only the pump-operator account may send them.
+COMMAND_NODES = ('shrimp-node04',)
 
 
 def prepare(directory, host):
@@ -21,7 +23,7 @@ def prepare(directory, host):
     credentials_file = directory / 'credentials.json'
     credentials = json.loads(credentials_file.read_text()) if credentials_file.exists() else {}
     # Keep existing passwords (already flashed into nodes); only add missing accounts.
-    for name in (*NODES, 'jetson-receiver'):
+    for name in (*NODES, 'jetson-receiver', 'pump-operator'):
         credentials.setdefault(name, secrets.token_hex(24))
     credentials_file.write_text(json.dumps(credentials))
     passwd = shutil.which('mosquitto_passwd') or str(ROOT.parents[1] / '.codex-build/runtime/usr/bin/mosquitto_passwd')
@@ -30,8 +32,10 @@ def prepare(directory, host):
     password_file.chmod(0o600)
     # Official utility hashes the private file in place; passwords never enter process arguments.
     subprocess.run([passwd, '-U', str(password_file)], check=True, capture_output=True)
-    acl = ''.join(f'user {n}\ntopic write shrimp/lab/{n}/records\ntopic write shrimp/lab/{n}/status\ntopic read shrimp/lab/{n}/ack\n' for n in NODES)
+    acl = ''.join(f'user {n}\ntopic write shrimp/lab/{n}/records\ntopic write shrimp/lab/{n}/status\ntopic read shrimp/lab/{n}/ack\n'
+                  + (f'topic read shrimp/lab/{n}/cmd\n' if n in COMMAND_NODES else '') for n in NODES)
     acl += 'user jetson-receiver\n' + ''.join(f'topic read shrimp/lab/{n}/records\ntopic read shrimp/lab/{n}/status\ntopic write shrimp/lab/{n}/ack\n' for n in NODES)
+    acl += 'user pump-operator\n' + ''.join(f'topic write shrimp/lab/{n}/cmd\n' for n in COMMAND_NODES)
     (directory / 'acl').write_text(acl)
     (directory / 'mosquitto.conf').write_text(f'''listener 1883 127.0.0.1
 listener 1883 {host}

@@ -1,7 +1,10 @@
 'use strict';
 const $ = id => document.getElementById(id);
 let series = [], history = [], refreshing = false, initialized = false;
-const qcText = {UNVALIDATED:'尚未科学验证',CONFIGURATION_MISMATCH:'配置不匹配',COMPENSATION_MISSING:'缺少温度补偿',COMMUNICATION_ERROR:'传感器通信错误',SENSOR_FAULT:'传感器异常',OUT_OF_RANGE:'超出范围',MISSING_VALUE:'缺少测量值',OK:'QC: OK'};
+const qcText = {UNVALIDATED:'尚未科学验证',CONFIGURATION_MISMATCH:'配置不匹配',COMPENSATION_MISSING:'缺少温度补偿',COMMUNICATION_ERROR:'传感器通信错误',SENSOR_FAULT:'传感器异常',OUT_OF_RANGE:'超出范围',MISSING_VALUE:'缺少测量值',OK:'QC: OK',STATE_MISMATCH:'INT 引脚与控制器状态不一致',MOTOR_VOLTAGE_LOW:'控制器报告运行，但电机电压过低',NOT_RUNNING_AS_COMMANDED:'未按设定流量运行'};
+const nodeNames = {'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'泵 1'};
+// pump_on is the pump controller's own report, not proof that water is flowing.
+const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'运行中':'已停止') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {
   const canvas=$('chart'), ratio=window.devicePixelRatio||1, w=canvas.clientWidth, h=220;
@@ -31,21 +34,22 @@ async function refresh(){
     const response=await fetch('/api/status');if(!response.ok)throw Error('status');const data=await response.json();
     $('serverDot').classList.add('connected');$('gateway').textContent='Jetson 网页服务在线';
     series=data.series;
-    if(!initialized){series.forEach((s,i)=>{const option=make('option','',s.label+' · '+s.sensor);option.value=i;$('series').append(option);});initialized=true;}
+    if(!initialized){series.forEach((s,i)=>{const option=make('option','',s.label+' · '+(nodeNames[s.node]||s.sensor));option.value=i;$('series').append(option);});initialized=true;}
     const waiting=[];
     for(const [node,config] of Object.entries(data.nodes)){
       const network=data.network[node]||{}, rows=data.latest.filter(r=>r.node_id===node), fresh=rows.filter(r=>!r.stale);
-      const badge=$('status-'+node);badge.className='badge'+(fresh.length?' live':' warn');badge.textContent=fresh.length?'收到测量数据':network.reachable&&network.identity_verified?'网络在线 · 无新数据':'设备网络待确认';
-      if(!fresh.length)waiting.push(node==='shrimp-node01'?'Node 1':'Node 2');
+      const pump=fresh.find(r=>r.parameter==='pump_on'&&r.value!==null);
+      const badge=$('status-'+node);badge.className='badge'+(pump?(pump.value&&pump.qc_flag==='UNVALIDATED'?' live':' warn'):fresh.length?' live':' warn');badge.textContent=pump?(pump.value?'泵运行中（控制器报告）':'泵已停止'):fresh.length?'收到测量数据':network.reachable&&network.identity_verified?'网络在线 · 无新数据':'设备网络待确认';
+      if(!fresh.length)waiting.push(nodeNames[node]||node);
       const container=$('metrics-'+node);container.replaceChildren();
       series.filter(s=>s.node===node).forEach(s=>{
         const row=rows.find(r=>r.sensor_id===s.sensor&&r.parameter===s.parameter),box=make('div','metric');
-        box.append(make('div','metric-label',s.label));const reading=make('div','reading',row&&row.value!==null?Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3}):'—');reading.append(make('span','unit',s.unit));box.append(reading);
+        box.append(make('div','metric-label',s.label));const reading=make('div','reading',shown(s,row));reading.append(make('span','unit',s.unit));box.append(reading);
         box.append(make('div','qc',row?(row.stale?'STALE · ':'')+(qcText[row.qc_flag]||row.qc_flag):'等待真实数据'));
         box.append(make('div','source',s.sensor));container.append(box);
       });
       const last=rows.reduce((a,r)=>r.received_utc>a?r.received_utc:a,'');
-      $('detail-'+node).textContent=config.ip+' · '+(network.identity_verified?'MAC 已核对':'MAC 待核对')+' ｜ 采样 UTC：未同步 / 未验证'+(last?' ｜ 最后接收：'+last:' ｜ 尚无测量记录');
+      $('detail-'+node).textContent=(config.ip||'IP 待核对')+' · '+(network.identity_verified?'MAC 已核对':'MAC 待核对')+' ｜ 采样 UTC：未同步 / 未验证'+(last?' ｜ 最后接收：'+last:' ｜ 尚无测量记录');
     }
     $('notice').textContent=(waiting.length?waiting.join('、')+' 尚未接入实时测量。设备联网不代表数据已经发送。':'测量已接入；请同时检查每个传感器的 QC 和是否过期。')+' 采样时间未同步时不补造 UTC。'+(!data.metadata_configured?' 实验 / 水缸标识尚未配置。':'');
     $('count').textContent=data.stats.measurements;$('rawCount').textContent=data.stats.raw_records;$('issueCount').textContent=data.stats.issues;
@@ -54,7 +58,7 @@ async function refresh(){
     if(data.camera.live)$('cameraFrame').src='/camera.jpg?t='+Date.now();
     $('lastUpdate').textContent='网关时间 '+data.gateway_utc;
     await loadHistory();
-  }catch(error){$('serverDot').classList.remove('connected');$('gateway').textContent='网页服务连接中断';$('notice').textContent='无法取得最新数据。页面上的旧读数不能视为实时测量。';for(const node of ['shrimp-node01','shrimp-node02']){$('status-'+node).textContent='连接中断 · 旧值';$('status-'+node).className='badge warn';}$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;}
+  }catch(error){$('serverDot').classList.remove('connected');$('gateway').textContent='网页服务连接中断';$('notice').textContent='无法取得最新数据。页面上的旧读数不能视为实时测量。';for(const badge of document.querySelectorAll('[id^="status-shrimp-"]')){badge.textContent='连接中断 · 旧值';badge.className='badge warn';}$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;}
   finally{refreshing=false;}
 }
 $('cameraFrame').addEventListener('error',()=>{$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;$('cameraStatus').textContent='视频帧不可用';});

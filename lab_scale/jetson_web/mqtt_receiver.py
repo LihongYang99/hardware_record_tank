@@ -1,4 +1,4 @@
-"""Receive Node 1/Node 2 records; application acknowledgement follows SQLite commit."""
+"""Receive Node 1/Node 2/pump-node-1 (Node 4) records; application acknowledgement follows SQLite commit."""
 import argparse
 import importlib.util
 import json
@@ -16,7 +16,7 @@ if importlib.util.find_spec('paho') is None:
 import paho.mqtt.client as mqtt
 from server import Store, fields, utc
 
-MQTT_NODES = ('shrimp-node01', 'shrimp-node02')
+MQTT_NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04')
 NODE = 'shrimp-node01'
 TOPIC = f'shrimp/lab/{NODE}/'  # Node 1 prefix, kept for existing callers
 

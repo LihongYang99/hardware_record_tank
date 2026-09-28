@@ -63,3 +63,7 @@ node_id=shrimp-node02 boot_id=b1d653f3374e3af5 sensor=PH_ATLAS_EZO seq=33 cycle=
 - EC 恢复后 Node 2 实测 **2.33 条/s**，64 条 RAM 队列约只够 **27 s** 断网（之前 EC 无回复时估的是 37 s）。
 - 发送是“一次一条，等 Jetson 落库 ACK 再发下一条”。实测相邻两条记录的到达间隔最短约 99 ms，中位数约 251 ms（Node 1 最短约 107 ms）。所以每个节点**最多大约每秒 4–10 条**；Node 2 平时已经用掉不少，初始化时的一连串 TX/RX 会让 `transport_age_ms` 暂时升到约 4.7 s。断网后积压的记录只能用剩下的余量慢慢补发。
 - 往返延迟较长的原因**未验证**，可能是 ESP32 Wi-Fi 默认省电模式（modem sleep）。可选的改进（未实施，留给顶层设计决定）：关闭 Wi-Fi 省电（`WiFi.setSleep(false)`，节点用 USB 供电，多耗一点电影响不大）、一次发送多条后批量 ACK、减少 TX/RX 单独成行的数量。
+
+## 2026-09-27 晚：供电方式
+
+- 用户确认 Node 2 经 USB Type-C 直接接电源适配器供电，已不接 Jetson USB（当晚 Jetson 上只有泵 1 的串口设备）。数据经 Wi-Fi 正常上传，网关核对 IP/MAC 一致。适配器型号未记录。

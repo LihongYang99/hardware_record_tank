@@ -1,8 +1,8 @@
 # Aquaculture Real-Time Monitoring Platform
 ## Engineering Specification
 
-Version: 0.2
-Status: Engineering Specification — tank description updated 2026-09-14
+Version: 0.3
+Status: Engineering Specification — tank description updated 2026-09-14; bypass pump node updated 2026-09-27 (DECISION 048)
 
 ---
 
@@ -230,6 +230,8 @@ Possible functions:
 - bypass pump status
 - bypass flow monitoring
 - additional flow-cell sensors
+
+Current allocation (2026-09-27, DECISION 048): a dedicated ESP32, lab name `pump-node-1` (`node_id=shrimp-node04`), controls and monitors the Atlas Scientific EZO-PMP over UART. Mg2+, Ca2+ and flow sensors are not yet assigned. Any fluid-contacting sensor added to this node requires its own galvanic isolation.
 
 Node allocation may be modified only when a clear engineering advantage exists.
 
@@ -980,6 +982,12 @@ diaphragm
 centrifugal
 
 before selection.
+
+Selected (2026-09-27, DECISION 048): Atlas Scientific EZO-PMP peristaltic pump, purchased; status PROVISIONAL until the criteria above pass bench commissioning.
+
+Interface: UART, 9600 8N1, directly to the pump node ESP32; separate 12 V motor branch.
+
+The firmware shall re-issue the flow setpoint after any pump reset (the manufacturer documents a reset after 20 days of continuous mode) and shall report the pump's own run state, INT pin and motor voltage. A reported run state is not evidence of flow; flow must be confirmed by a flow meter or a timed collection.
 
 ---
 

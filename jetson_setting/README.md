@@ -10,7 +10,9 @@
 
 交接说明包含节点信息、MQTT 缺口、相机已验证与待验证状态、网页需求、执行顺序、安全边界和验收要求。不保存任何密码。
 
-从实验室外访问网页（学校 Cisco VPN + SSH 端口转发，不用第三方隧道）见 [REMOTE_ACCESS.md](REMOTE_ACCESS.md)。
+从实验室外访问网页（学校 Cisco VPN + SSH 端口转发，不用第三方隧道）见 [REMOTE_ACCESS.md](REMOTE_ACCESS.md)。转发后监控页是 `http://localhost:8080`，设备控制页是 `http://localhost:8080/control`（需要账号）。
+
+**注意：Jetson 重启后 broker、接收器和网页都不会自动启动**，相机网段的临时地址也会消失。2026-09-27 重启后约 4 小时没有接收数据。重启后按 [jetson_web README](../lab_scale/jetson_web/README.md) 的"完整启动顺序"重新启动。
 
 ## 方法与原理
 

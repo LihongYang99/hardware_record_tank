@@ -27,6 +27,8 @@ At 80 mL/min, a volume equal to 100 L passes through the loop in `100,000 / 80 =
 | Small centrifugal | Weak at 80 mL/min without throttling | Impeller/body/seal all wetted | Not self-priming; poor low-flow repeatability; heat and throttling | Rejected for baseline. |
 | Gravity/siphon | Level-dependent | Simple tubing | Siphon/runaway risk; changes with tank level and fouling | Rejected for unattended duty. |
 
+> **2026-09-27 — superseded for the pump by DECISION 048:** the purchased EZO-PMP uses UART on its own ESP32 (`lab_scale/pump-node-1/`). The isolated I2C design below remains the reference for a future flow meter.
+
 **Recommendation — requires promotion of OPEN-09:** Atlas Scientific `EZO-PMP`.
 
 Manufacturer evidence supports 0.5–105 mL/min, self-priming, dry running, calibration, and 12–24 V motor plus 3.3–5.5 V control power. The supplied pump-head tubing is PharMed BPT, 5 mm OD × 3 mm ID. Stated life is >1,000 h for tubing, 1,500 h for cassette, and 5,000 h for motor. These are only about 42, 63, and 208 days at 24/7 operation, so this pump is serviceable rather than maintenance-free.

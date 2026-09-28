@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shrimp Trail · Device control</title><link rel="stylesheet" href="/style.css"><script src="/control.js" defer></script></head>
+<body>
+<header><div class="brand"><span class="logo">≈</span><div><strong>SHRIMP TRAIL</strong><small>Lab device control · login required</small></div></div><div class="gateway"><span id="userLabel">Not logged in</span><button id="logout" class="lang" type="button" hidden>Log out</button><a class="lang" href="/control" lang="zh-CN">中文</a><a class="lang" href="/en">Monitoring page</a></div></header>
+<main class="control-main">
+<section class="intro"><div><p class="eyebrow">DEVICE CONTROL</p><h1>Device control</h1><p class="muted">Viewing monitoring data needs no login. Actions that change experimental conditions happen here, and every action is logged with the operator and the device’s actual reply.</p></div></section>
+<div id="notice" class="notice">Checking control status…</div>
+<section id="loginPanel" class="panel" hidden>
+<p class="eyebrow">OPERATOR LOGIN</p><h2>Please log in</h2>
+<p class="muted">Accounts are created on the Jetson with <code>python3 pump_ctl.py web-user add &lt;account&gt;</code>. Five wrong passwords in a row lock that account for 60 seconds.</p>
+<form id="loginForm" class="pump-control"><div class="pump-fields two"><label>Account<input id="username" maxlength="20" autocomplete="username"></label><label>Password<input id="password" type="password" maxlength="128" autocomplete="current-password"></label></div>
+<div class="pump-buttons"><button type="submit" id="loginButton">Log in</button></div><p id="loginMessage" class="pump-message" role="status"></p></form>
+</section>
+<section id="devicePanel" hidden>
+<div class="section-title"><h2>Devices</h2><span id="deviceCount" class="muted"></span></div>
+<div id="devices" class="device-grid"></div>
+</section>
+<section id="eventPanel" class="panel" hidden>
+<p class="eyebrow">ACTIVITY LOG</p><h2>Recent actions</h2>
+<div class="events-wrap"><table class="events"><thead><tr><th>Sent (UTC)</th><th>Device</th><th>Operator</th><th>Action</th><th>Result</th><th>Device reply</th></tr></thead><tbody id="events"></tbody></table></div>
+<p class="muted">Terminal actions (including calibration) appear here too. Calibration is done only on the Jetson terminal with <code>pump_ctl.py</code>. You are logged out after 30 minutes without activity.</p>
+</section>
+<footer><span>Commands reach each node over MQTT; nodes run only whitelisted commands</span><span id="lastUpdate"></span></footer>
+</main>
+</body></html>

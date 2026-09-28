@@ -2,12 +2,15 @@
 // English dashboard. Same API and data rules as app.js; only presentation text differs.
 const $ = id => document.getElementById(id);
 let series = [], history = [], refreshing = false, initialized = false;
-const qcText = {UNVALIDATED:'Not yet validated',CONFIGURATION_MISMATCH:'Configuration mismatch',COMPENSATION_MISSING:'No temperature compensation',COMMUNICATION_ERROR:'Sensor communication error',SENSOR_FAULT:'Sensor fault',OUT_OF_RANGE:'Out of range',MISSING_VALUE:'Missing value',OK:'QC: OK'};
+const qcText = {UNVALIDATED:'Not yet validated',CONFIGURATION_MISMATCH:'Configuration mismatch',COMPENSATION_MISSING:'No temperature compensation',COMMUNICATION_ERROR:'Sensor communication error',SENSOR_FAULT:'Sensor fault',OUT_OF_RANGE:'Out of range',MISSING_VALUE:'Missing value',OK:'QC: OK',STATE_MISMATCH:'INT pin disagrees with controller',MOTOR_VOLTAGE_LOW:'Reported running but motor voltage is low',NOT_RUNNING_AS_COMMANDED:'Not running at the set flow rate'};
 const labels = {'DO_SEN0681/DO_mg_L':'Dissolved oxygen','DO_SEN0681/saturation_pct':'DO saturation','DO_SEN0681/temperature_C':'Temp (DO probe)',
   'ORP_SEN0709/ORP_mV':'ORP','ORP_SEN0709/temperature_C':'Temp (ORP probe)','EC_ATLAS_EZO/EC_uS_cm':'Conductivity (EC)',
-  'EC_ATLAS_EZO/salinity_PSU':'Salinity','PH_ATLAS_EZO/pH':'pH'};
+  'EC_ATLAS_EZO/salinity_PSU':'Salinity','PH_ATLAS_EZO/pH':'pH','PUMP_ATLAS_PMP/pump_on':'Pump state','PUMP_ATLAS_PMP/target_mL_min':'Flow setpoint',
+  'PUMP_ATLAS_PMP/motor_V':'Motor supply','PUMP_ATLAS_PMP/total_volume_mL':'Volume since power-up'};
 const cameraText = {LIVE:'Live video',CONNECTING:'Connecting',RETRYING:'Connection lost · retrying',NOT_CONFIGURED:'Not configured',NO_GSTREAMER:'Decoder unavailable'};
-const nodeName = node => node === 'shrimp-node01' ? 'Node 1' : 'Node 2';
+const nodeName = node => ({'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'Pump 1'})[node] || node;
+// pump_on is the pump controller's own report, not proof that water is flowing.
+const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'Running':'Stopped') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
 const label = s => labels[s.sensor + '/' + s.parameter] || s.parameter;
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {
@@ -42,26 +45,27 @@ async function refresh(){
     const waiting=[];
     for(const [node,config] of Object.entries(data.nodes)){
       const network=data.network[node]||{}, rows=data.latest.filter(r=>r.node_id===node), fresh=rows.filter(r=>!r.stale);
-      const badge=$('status-'+node);badge.className='badge'+(fresh.length?' live':' warn');badge.textContent=fresh.length?'Receiving data':network.reachable&&network.identity_verified?'Online · no new data':'Network not confirmed';
+      const pump=fresh.find(r=>r.parameter==='pump_on'&&r.value!==null);
+      const badge=$('status-'+node);badge.className='badge'+(pump?(pump.value&&pump.qc_flag==='UNVALIDATED'?' live':' warn'):fresh.length?' live':' warn');badge.textContent=pump?(pump.value?'Pump running (controller report)':'Pump stopped'):fresh.length?'Receiving data':network.reachable&&network.identity_verified?'Online · no new data':'Network not confirmed';
       if(!fresh.length)waiting.push(nodeName(node));
       const container=$('metrics-'+node);container.replaceChildren();
       series.filter(s=>s.node===node).forEach(s=>{
         const row=rows.find(r=>r.sensor_id===s.sensor&&r.parameter===s.parameter),box=make('div','metric');
-        box.append(make('div','metric-label',label(s)));const reading=make('div','reading',row&&row.value!==null?Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3}):'—');reading.append(make('span','unit',s.unit));box.append(reading);
+        box.append(make('div','metric-label',label(s)));const reading=make('div','reading',shown(s,row));reading.append(make('span','unit',s.unit));box.append(reading);
         box.append(make('div','qc',row?(row.stale?'STALE · ':'')+(qcText[row.qc_flag]||row.qc_flag):'Waiting for data'));
         box.append(make('div','source',s.sensor));container.append(box);
       });
       const last=rows.reduce((a,r)=>r.received_utc>a?r.received_utc:a,'');
-      $('detail-'+node).textContent=config.ip+' · '+(network.identity_verified?'MAC verified':'MAC not verified')+' | Sample UTC: not synchronised'+(last?' | Last received: '+last:' | No records yet');
+      $('detail-'+node).textContent=(config.ip||'IP not verified')+' · '+(network.identity_verified?'MAC verified':'MAC not verified')+' | Sample UTC: not synchronised'+(last?' | Last received: '+last:' | No records yet');
     }
-    $('notice').textContent=(waiting.length?waiting.join(' and ')+' not delivering live data right now.':'Live data from both nodes. Check each reading’s QC flag and whether it is stale.')+' Probes are not yet calibrated; node clocks are not synchronised, so times shown are when the gateway received the data.'+(!data.metadata_configured?' Tank / experiment IDs are not configured yet.':'');
+    $('notice').textContent=(waiting.length?waiting.join(' and ')+' not delivering live data right now.':'Live data from all nodes. Check each reading’s QC flag and whether it is stale.')+' Probes are not yet calibrated; node clocks are not synchronised, so times shown are when the gateway received the data.'+(!data.metadata_configured?' Tank / experiment IDs are not configured yet.':'');
     $('count').textContent=data.stats.measurements;$('rawCount').textContent=data.stats.raw_records;$('issueCount').textContent=data.stats.issues;
     $('cameraStatus').textContent=cameraText[data.camera.code]||'Unknown';$('cameraStatus').className='badge'+(data.camera.live?' live':' warn');
     $('cameraEmpty').hidden=data.camera.live;$('cameraFrame').hidden=!data.camera.live;
     if(data.camera.live)$('cameraFrame').src='/camera.jpg?t='+Date.now();
     $('lastUpdate').textContent='Gateway time '+data.gateway_utc;
     await loadHistory();
-  }catch(error){$('serverDot').classList.remove('connected');$('gateway').textContent='Connection to web service lost';$('notice').textContent='Cannot fetch the latest data. Readings on screen are old and must not be treated as live.';for(const node of ['shrimp-node01','shrimp-node02']){$('status-'+node).textContent='Disconnected · old values';$('status-'+node).className='badge warn';}$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;}
+  }catch(error){$('serverDot').classList.remove('connected');$('gateway').textContent='Connection to web service lost';$('notice').textContent='Cannot fetch the latest data. Readings on screen are old and must not be treated as live.';for(const badge of document.querySelectorAll('[id^="status-shrimp-"]')){badge.textContent='Disconnected · old values';badge.className='badge warn';}$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;}
   finally{refreshing=false;}
 }
 $('cameraFrame').addEventListener('error',()=>{$('cameraFrame').hidden=true;$('cameraEmpty').hidden=false;$('cameraStatus').textContent='Frame unavailable';});

@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Shrimp Trail · 设备控制</title><link rel="stylesheet" href="/style.css"><script src="/control.js" defer></script></head>
+<body>
+<header><div class="brand"><span class="logo">≈</span><div><strong>SHRIMP TRAIL</strong><small>实验室设备控制 · 需要登录</small></div></div><div class="gateway"><span id="userLabel">未登录</span><button id="logout" class="lang" type="button" hidden>退出登录</button><a class="lang" href="/control/en" lang="en">English</a><a class="lang" href="/">返回监控页</a></div></header>
+<main class="control-main">
+<section class="intro"><div><p class="eyebrow">设备控制</p><h1>设备控制台</h1><p class="muted">查看监控数据不需要登录；会改变实验条件的操作在这里完成，每条操作都记录操作人和设备的实际回复。</p></div></section>
+<div id="notice" class="notice">正在检查控制状态…</div>
+<section id="loginPanel" class="panel" hidden>
+<p class="eyebrow">操作员登录</p><h2>请登录</h2>
+<p class="muted">账号由 Jetson 管理员用 <code>python3 pump_ctl.py web-user add &lt;账号&gt;</code> 创建。同一账号连续输错 5 次锁定 60 秒。</p>
+<form id="loginForm" class="pump-control"><div class="pump-fields two"><label>账号<input id="username" maxlength="20" autocomplete="username"></label><label>密码<input id="password" type="password" maxlength="128" autocomplete="current-password"></label></div>
+<div class="pump-buttons"><button type="submit" id="loginButton">登录</button></div><p id="loginMessage" class="pump-message" role="status"></p></form>
+</section>
+<section id="devicePanel" hidden>
+<div class="section-title"><h2>设备</h2><span id="deviceCount" class="muted"></span></div>
+<div id="devices" class="device-grid"></div>
+</section>
+<section id="eventPanel" class="panel" hidden>
+<p class="eyebrow">操作记录</p><h2>最近操作</h2>
+<div class="events-wrap"><table class="events"><thead><tr><th>发送时间（UTC）</th><th>设备</th><th>操作人</th><th>操作</th><th>结果</th><th>设备回复</th></tr></thead><tbody id="events"></tbody></table></div>
+<p class="muted">终端操作（包括校准）也显示在这里。校准只能在 Jetson 终端用 <code>pump_ctl.py</code> 完成。30 分钟不操作会自动退出登录。</p>
+</section>
+<footer><span>控制命令经 MQTT 发给对应节点，节点只执行白名单命令</span><span id="lastUpdate"></span></footer>
+</main>
+</body></html>

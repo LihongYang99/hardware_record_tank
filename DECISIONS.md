@@ -1020,7 +1020,9 @@ Do not oversize the bypass.
 
 Status:
 
-OPEN / RESEARCH REQUIRED
+SUPERSEDED BY DECISION 048 (2026-09-27). Original text kept below for traceability.
+
+Original status: OPEN / RESEARCH REQUIRED
 
 Pump type has NOT yet been locked.
 
@@ -1323,6 +1325,38 @@ Do not sacrifice reliability to save:
 
 ---
 
+# DECISION 048 — Bypass Pump and Pump Node (pump-node-1 = Node 4)
+
+Date accepted: 2026-09-27, by the user (direct instruction; SPEC change authorized).
+
+Status:
+
+- Node allocation (dedicated ESP32 for the pump) and UART interface: LOCKED
+- Pump model Atlas Scientific EZO-PMP: PROVISIONAL — purchased; bench commissioning not yet passed
+- Flow setpoint: operator-controlled (see item 4); no fixed rate is locked. Measured 2026-09-27: the uncalibrated pump reports a constant-rate maximum of 54.66 mL/min (`?MAXRATE,54.66`), so the earlier 80 mL/min default was not achievable and was removed
+
+Decision:
+
+1. The bypass pump is the Atlas Scientific EZO-PMP peristaltic pump.
+2. It is controlled by its own ESP32 node, lab name `pump-node-1`, firmware `node_id=shrimp-node04` (SPEC NODE 04 — BYPASS). Lab folder: `lab_scale/pump-node-1/`.
+3. Interface: UART (pump factory default, 9600 8N1), directly to the ESP32 (GPIO18 RX / GPIO17 TX), pump INT to GPIO4, pump VCC from the ESP32 3.3 V pin. The 12 V motor supply is a separate branch to the pump only.
+4. The operator starts, stops, sets the rate and calibrates the pump with `lab_scale/jetson_web/pump_ctl.py` on the Jetson (user request 2026-09-27). Commands travel on MQTT topic `shrimp/lab/shrimp-node04/cmd`, writable only by broker account `pump-operator`; the firmware executes only a whitelist, de-duplicates by command id, and logs every command with operator and pump reply. The setpoint is stored in ESP32 NVS (default 0 = off) and re-sent after every pump reset. The firmware monitors `D,?`, INT, `PV,?`, `TV,?` every 4 s. The public monitoring page stays read-only without login. A separate control page `/control` (enabled only when `server.py` runs with `--pump-control`; user request 2026-09-27) requires a personal account (`pump_ctl.py web-user add`, salted PBKDF2 hashes in `jetson_web/data/pump_web_users.json`), uses an in-memory session (HttpOnly, SameSite=Strict cookie, 30 min idle expiry, revoked when the account is removed), locks an account name for 60 s after 5 wrong passwords, accepts JSON only, offers start/set-rate and stop, and logs the operator as `web-<account>`. The page lists devices from a registry (`pump_ctl.DEVICES`) so later controllable devices can be added; this pump is named 泵 1 / Pump 1 (device id `pump1`); its stored sensor id stays `PUMP_ATLAS_PMP`. Calibration stays terminal-only. The page is plain HTTP on the lab LAN, the same exposure as the lab MQTT.
+
+Change-control record (replaces DECISION 036 and the Phase-1 isolated-I2C pump wiring):
+
+1. Decision ID: 036 (superseded), new 048.
+2. Existing decision: pump type open; Phase-1 recommendation placed the EZO-PMP on a DFR0565-isolated I2C bus shared with the flow meter (docs/phase1 WIRING_AND_GPIO §7.4).
+3. Accepted decision: items 1–4 above.
+4. Technical reason: the pump is already purchased; UART is the pump's default protocol and matches the existing Node-2 Atlas UART code; a dedicated node keeps an actuator fault from affecting sensor nodes.
+5. Evidence: EZO-PMP datasheet (https://files.atlas-scientific.com/EZO_PMP_Datasheet.pdf, retrieved 2026-09-27): UART default 9600; wire colors red VCC / black GND / white RX / green TX / blue INT; VCC 3.3–5.5 V; motor 12–24 V, ~400 mA at 12 V, minimum 10.8 V; 0.5–105 mL/min; INT high while dispensing; can run dry; resets after 20 days of continuous mode.
+6. Effect on other parts: isolation from Phase-1 §7 is not applied to the pump. Justification: the liquid contacts only the pump tubing. Any fluid-contacting sensor later added to this node (flow meter, Mg/Ca) must receive its own galvanic isolation. Phase-1 reserved GPIO17/18 on Node 4 as a service UART; they are now the pump UART.
+7. BOM changes: pump purchased; one ESP32 from existing stock; a separate 12 V adapter and a 1 A fuse for the pump branch are recommended.
+8. Wiring changes: see `lab_scale/pump-node-1/WIRING.md`.
+9. Risks: after calibration (2026-09-27, `?CAL,3`, 10 mL commanded → 8.3 mL measured in both modes) the constant-rate maximum is 45.36 mL/min, below the SPEC §29 conceptual 50–150 mL/min (marked "must be validated"); SPEC not changed — revisit when flow-cell and sensor flow needs are known. Whether pump logic GND is tied to motor − internally is NOT VERIFIED (possible ground connection through a shared 12 V adapter); 15–25 ppt long-term tubing compatibility NOT VERIFIED; "running" is the controller's report and does not prove flow until a flow meter exists (OPEN-10).
+10. Recommendation: commission on the bench (communication, reset recovery, flow by timed collection) before connecting to the tank.
+
+---
+
 # Current Critical Open Decisions
 
 The following items are NOT yet locked and require research.
@@ -1361,7 +1395,7 @@ Final Ca sensor technology/model.
 
 ## OPEN-09
 
-Final bypass pump.
+Final bypass pump. **Resolved provisionally by DECISION 048 (Atlas EZO-PMP, UART, pump-node-1); closes when bench commissioning passes.**
 
 ## OPEN-10
 

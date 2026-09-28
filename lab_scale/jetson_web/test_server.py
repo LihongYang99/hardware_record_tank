@@ -61,6 +61,18 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(all(r['value'] == 0 and r['qc_flag'] == 'CONFIGURATION_MISMATCH' for r in rows))
         self.assertEqual(json.loads(rows[0]['metadata'])['calibration_reply'], '?CAL,0')
 
+    def test_pump_state_is_stored_and_errors_are_not_zero(self):
+        base = 'node_id=shrimp-node04 boot_id=p sensor=PUMP_ATLAS_PMP cycle=1 request_uptime_ms=4000 UTC=UNSYNCED '
+        self.assertEqual(self.store.ingest('shrimp-node04', base + 'seq=1 pump_on=1 int_pin=1 motor_V=12.10 total_volume_mL=5.25 '
+                                           'target_mL_min=80.00 raw_D=?D,*,1 raw_PV=?PV,12.10 raw_TV=?TV,5.25 COMM=OK QC=UNVALIDATED'), 4)
+        values = {r['parameter']: r['value'] for r in self.store.latest()[0]}
+        self.assertEqual(values, {'pump_on': 1.0, 'target_mL_min': 80.0, 'motor_V': 12.1, 'total_volume_mL': 5.25})
+        self.assertEqual(json.loads(self.store.latest()[0][0]['metadata'])['raw_D'], '?D,*,1')
+        self.store.ingest('shrimp-node04', base + 'seq=2 command=D,? reply=NONE COMM=ERROR QC=COMMUNICATION_ERROR reason=REPLY_TIMEOUT')
+        self.assertTrue(all(r['value'] is None and r['qc_flag'] == 'COMMUNICATION_ERROR' for r in self.store.latest()[0]))
+        with self.assertRaises(ValueError):
+            self.store.ingest('shrimp-node01', base + 'seq=3 pump_on=1 COMM=OK QC=UNVALIDATED')
+
     def test_identity_mismatch_is_rejected(self):
         with self.assertRaises(ValueError):
             self.store.ingest('shrimp-node02', record())
@@ -102,6 +114,90 @@ class StoreTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
 
+
+    def test_control_page_requires_login_and_monitoring_stays_public(self):
+        import pump_ctl
+
+        def call(root, path, body=None, cookie=None, kind='application/json'):
+            headers = {'Content-Type': kind} if body is not None else {}
+            if cookie:
+                headers['Cookie'] = f'pump_session={cookie}'
+            request = Request(root + path, data=None if body is None else json.dumps(body).encode(), headers=headers)
+            try:
+                with urlopen(request) as response:
+                    return response.status, json.load(response), response.headers.get('Set-Cookie')
+            except HTTPError as error:
+                return error.code, json.load(error), error.headers.get('Set-Cookie')
+
+        def serve(pump):
+            server = ThreadingHTTPServer(('127.0.0.1', 0), handler_for(self.store, Camera(), Network('lo'), pump=pump))
+            threading.Thread(target=server.serve_forever, daemon=True).start()
+            return server, f'http://127.0.0.1:{server.server_port}'
+
+        server, root = serve(None)
+        try:
+            self.assertEqual(call(root, '/api/session')[1]['reason'], 'NOT_ENABLED')
+            self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'x'})[0], 403)
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'})[0], 403)
+            with urlopen(root + '/control') as response:
+                self.assertIn('操作员登录', response.read().decode())
+            with urlopen(root + '/control/en') as response:
+                self.assertIn('OPERATOR LOGIN', response.read().decode())
+            self.assertEqual(call(root, '/api/status')[0], 200)
+        finally:
+            server.shutdown(); server.server_close()
+
+        users = Path(self.temp.name) / 'users.json'
+        control = pump_ctl.WebControl(self.store.path, None, users)
+        sent = []
+        control.run = lambda device, command, name: sent.append((device, command, name)) or {'result': 'OK', 'reply': 'NONE', 'target_mL_min': '50.00'}
+        server, root = serve(control)
+        try:
+            self.assertEqual(call(root, '/api/session')[1]['reason'], 'NO_USERS')
+            self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'correct horse'})[0], 403)
+            for name, password in [('li hy', 'correct horse'), ('li', 'short'), ('x' * 21, 'correct horse')]:
+                with self.assertRaises(ValueError):
+                    pump_ctl.add_user(users, name, password)
+            pump_ctl.add_user(users, 'li', 'correct horse')
+            self.assertEqual(oct(users.stat().st_mode & 0o777), '0o600')
+            self.assertNotIn('correct horse', users.read_text())
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'})[0], 401)
+            self.assertEqual(call(root, '/api/control/events')[0], 401)
+            self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'wrong password'})[0], 401)
+            self.assertEqual(call(root, '/api/login', {'username': 'nobody', 'password': 'correct horse'})[0], 401)
+            status, data, cookie = call(root, '/api/login', {'username': 'li', 'password': 'correct horse'})
+            self.assertEqual((status, data['user']), (200, 'li'))
+            self.assertIn('HttpOnly', cookie)
+            self.assertIn('SameSite=Strict', cookie)
+            token = cookie.split(';')[0].split('=', 1)[1]
+            session = call(root, '/api/session', cookie=token)[1]
+            self.assertEqual(session['user'], 'li')
+            self.assertEqual([(d['id'], d['name'], d['kind']) for d in session['devices']], [('pump1', '泵 1', 'pump')])
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token, 'text/plain')[0], 415)
+            for body in ({'device': 'pump1', 'action': 'start', 'rate': 500}, {'device': 'pump1', 'action': 'start', 'rate': 'nan'},
+                         {'device': 'pump1', 'action': 'dispense'}, {'device': 'pump1', 'action': 'start'},
+                         {'device': 'pump9', 'action': 'stop'}, {'action': 'stop'}, {'device': ['pump1'], 'action': 'stop'}):
+                self.assertEqual(call(root, '/api/control', body, token)[0], 400, body)
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token)[1]['result'], 'OK')
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, token)[1]['command'], 'X')
+            self.assertEqual(sent, [('pump1', 'DC,50.00,*', 'li'), ('pump1', 'X', 'li')])
+            self.assertEqual(call(root, '/api/control/events', cookie=token)[0], 200)
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, 'forged-token')[0], 401)
+            self.assertIn('Max-Age=0', call(root, '/api/logout', {}, token)[2])
+            self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, token)[0], 401)
+            # Removing an account ends its live session at the next request.
+            token = call(root, '/api/login', {'username': 'li', 'password': 'correct horse'})[2].split(';')[0].split('=', 1)[1]
+            pump_ctl.add_user(users, 'other', 'another pass')
+            remaining = pump_ctl.load_users(users); remaining.pop('li'); pump_ctl.save_users(users, remaining)
+            self.assertIsNone(call(root, '/api/session', cookie=token)[1]['user'])
+            # Five wrong passwords lock the account name even for the right password.
+            pump_ctl.add_user(users, 'li', 'correct horse')
+            for _ in range(5):
+                self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'wrong password'})[0], 401)
+            self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'correct horse'})[0], 429)
+            self.assertEqual(len(sent), 2)
+        finally:
+            server.shutdown(); server.server_close()
 
 if __name__ == '__main__':
     unittest.main()
