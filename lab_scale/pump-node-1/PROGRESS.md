@@ -116,6 +116,7 @@
 
 - 用户重启了两个服务（`ps` 核对启动时间）：`run_mqtt.py` 20:21:46 EDT，`server.py … --pump-control` 20:27:59 EDT。接收器重启后 `target_mL_min` 从 00:21:49Z 起单独入库（到 00:32Z 已 161 行），监控页"设定流量"卡片有值；英文控制页 `/control/en` 生效。网页重启后内存会话清空，需要重新登录。
 - 当前（00:32Z，`pump_ctl.py show`）：停止，设定 0，电机 11.95 V，本次上电累计 73.06 mL，`?CAL,3`，`?MAXRATE,45.36`。
+- 20:46 EDT 前：用户把泵 1 的 ESP32 从 Jetson USB 改接独立 USB Type-C 电源适配器（5 V），Jetson 上 `/dev/serial/by-id/` 已无任何串口设备。适配器型号未记录。板子重新上电后设定仍为 0（NVS），不会自己转。当晚计划关闭 Jetson，之后节点数据不接收；烧录或看串口日志时再插回 Jetson。
 - 当天从建节点到控制页的全部调试过程按"现象 → 原因 → 处理"汇总在 [README.md](README.md#调试过程2026-09-27摘要)；本文件保留逐条原始记录。网关侧过程见 [jetson_web README](../jetson_web/README.md#2026-09-27-晚泵-1-接入与设备控制页)。
 
 ## 待记录（烧录时补）

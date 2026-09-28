@@ -47,7 +47,7 @@
 - 2026-09-27：两节点经 Wi-Fi → MQTT 实时发到 Jetson，落库后才确认（ACK）；相机视频经 RTSP 进入同一网页。中文页 `http://192.168.88.249:8080`，英文页 `/en`。
 - 已实测：Jetson 接收端中断 25 s 后补发无缺口；节点换电源重启后自动恢复上传。
 - 仍未完成：UTC 同步、断电持久缓存（RAM 队列 64 条：Node 1 约 80 s、Node 2 约 27 s）、路由器/Wi-Fi 断开测试、长时间运行、校准、Raspberry Pi 正式网关。
-- Node 1、Node 2 都经 USB Type-C 直接接电源适配器供电（用户 2026-09-27 确认），不接 Jetson；没有 UPS，断电时节点和 RAM 缓冲一起丢失。泵 1 的 ESP32 目前插在 Jetson USB 上（`/dev/ttyACM0`，COM 口）。
+- Node 1、Node 2、泵 1 的 ESP32 都经 USB Type-C 直接接电源适配器供电（用户 2026-09-27 确认；泵 1 于当晚 20:46 EDT 前从 Jetson USB 改接独立适配器，Jetson 上已无串口设备），不接 Jetson；适配器型号未记录；没有 UPS，断电时节点和 RAM 缓冲一起丢失。要烧录或看串口日志时再把对应板子插回 Jetson。
 - 2026-09-27：Jetson 于 14:12 EDT 重启后 broker/接收器/网页没有自动启动；数据库最后一条 Node 1/2 记录为 16:42:38Z（12:42 EDT），到 20:39Z 仍无新数据，这段数据未被接收（超出节点 RAM 缓冲）。这是"无开机自启"缺口的实际后果。
 - 2026-09-27：新增泵 1（pump-node-1，DECISION 048）。固件 0.2 已烧录（MAC 7C:4F:AD:B5:33:38，IP 192.168.88.248）；两种校准完成（10 mL 指令实测 8.3 mL，复核 9.7 mL），恒定流量上限 45.36 mL/min；操作经 MQTT `cmd` 主题下发，只有 `pump-operator` 账号能写。终端 `jetson_web/pump_ctl.py`，网页 `/control`（中文）、`/control/en`（英文，个人账号登录）。当天遇到的问题（演示灯、泵板没上电、80 mL/min 超上限、校准被拒、两种校准独立、设定流量卡片空、控制页三次改版）及处理见 [pump-node-1 README 调试过程](pump-node-1/README.md#调试过程2026-09-27摘要)。
 
