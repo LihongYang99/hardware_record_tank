@@ -9,6 +9,8 @@ struct FakeTelemetry {
   size_t write(uint8_t c){out+=char(c);return 1;}
   void serviceUSB(){}
 } telemetry;
+#define TELEMETRY_NODE "shrimp-node04"
+#define PUMP_SENSOR "PUMP_ATLAS_PMP"
 #include "../script/PMP_MQTT/PumpChannel.h"
 BenchLog benchLog; char bootID[17]="test";
 void run(PumpChannel&p,uint32_t ms){for(uint32_t i=0;i<ms;i+=10){fakeTime+=10;p.service();}}

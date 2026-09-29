@@ -1355,6 +1355,23 @@ Change-control record (replaces DECISION 036 and the Phase-1 isolated-I2C pump w
 9. Risks: after calibration (2026-09-27, `?CAL,3`, 10 mL commanded → 8.3 mL measured in both modes) the constant-rate maximum is 45.36 mL/min, below the SPEC §29 conceptual 50–150 mL/min (marked "must be validated"); SPEC not changed — revisit when flow-cell and sensor flow needs are known. Whether pump logic GND is tied to motor − internally is NOT VERIFIED (possible ground connection through a shared 12 V adapter); 15–25 ppt long-term tubing compatibility NOT VERIFIED; "running" is the controller's report and does not prove flow until a flow meter exists (OPEN-10).
 10. Recommendation: commission on the bench (communication, reset recovery, flow by timed collection) before connecting to the tank.
 
+# DECISION 049 — Second Bypass Pump Node (pump-node-2 = Node 5, 泵 2)
+
+Date accepted: 2026-09-29, by the user (direct instruction: "node 5 跟 node 4 一样是 pump").
+
+Status:
+
+- Node allocation (a second dedicated ESP32 with an Atlas EZO-PMP), UART wiring identical to DECISION 048: LOCKED for the lab bench
+- Purpose: second bypass pump — PROVISIONAL (user, 2026-09-29: "暂且定义为第二个旁路泵"). SPEC defines only one bypass pump (NODE 04); SPEC not changed
+- Board: ESP32-S3 (QFN56) rev v0.2, 8 MB PSRAM, 16 MB flash, MAC 7C:4F:AD:B5:1C:D4 (esptool, 2026-09-29). Pump model and wiring: user reports the same as pump-node-1 (GPIO17 → white, GPIO18 → green); pump firmware version and calibration: NOT VERIFIED until read from the pump
+
+Decision:
+
+1. Lab name `pump-node-2`, firmware `node_id=shrimp-node05`, stored sensor id `PUMP2_ATLAS_PMP` (the gateway maps each sensor id to exactly one node), control-page device `pump2` = 泵 2 / Pump 2. Lab folder: `lab_scale/pump-node-2/`.
+2. Everything else follows DECISION 048 items 3–4: same pins, same whitelist and command handling, MQTT topic `shrimp/lab/shrimp-node05/cmd` writable only by `pump-operator`, setpoint in NVS (default 0 = off), same login-protected control page and terminal tool (`pump_ctl.py --device pump2`).
+3. Code is shared, not forked: `PumpChannel.h`, `PumpParse.h`, `Telemetry.h`, `BenchLog.h` are byte-identical between the two pump sketches; only `PMP_MQTT.ino` (node id, sensor id, firmware tag, `NODE_MAC`) differs. Making node/sensor names macros did not change pump-node-1's program: its rebuilt image differs from the flashed 0.2 image only in the embedded ELF hash and image checksum (2026-09-29 byte comparison), so pump-node-1 was not reflashed.
+4. Risks: the same open items as DECISION 048 item 9 apply to this pump; after its own calibration (2026-09-29, `?CAL,3`; 10 mL commanded → 9.19 mL by volume, 9.08 mL timed) its constant-rate maximum is 49.63 mL/min, also slightly below the SPEC §29 conceptual 50–150 mL/min. If the second bypass becomes permanent, revise SPEC §5/§29–§31 (a second bypass loop, its flow cell and return path) before connecting it to the tank.
+
 ---
 
 # Current Critical Open Decisions

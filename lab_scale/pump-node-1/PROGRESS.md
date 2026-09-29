@@ -119,6 +119,10 @@
 - 20:46 EDT 前：用户把泵 1 的 ESP32 从 Jetson USB 改接独立 USB Type-C 电源适配器（5 V），Jetson 上 `/dev/serial/by-id/` 已无任何串口设备。适配器型号未记录。板子重新上电后设定仍为 0（NVS），不会自己转。当晚计划关闭 Jetson，之后节点数据不接收；烧录或看串口日志时再插回 Jetson。
 - 当天从建节点到控制页的全部调试过程按"现象 → 原因 → 处理"汇总在 [README.md](README.md#调试过程2026-09-27摘要)；本文件保留逐条原始记录。网关侧过程见 [jetson_web README](../jetson_web/README.md#2026-09-27-晚泵-1-接入与设备控制页)。
 
+## 2026-09-29：代码与泵 2 共用
+
+- 为新增的泵 2（pump-node-2），`PumpChannel.h`、`PMP_MQTT.ino` 里写死的 `shrimp-node04` / `PUMP_ATLAS_PMP` 改为宏 `TELEMETRY_NODE` / `PUMP_SENSOR`（定义在 `.ino`）。改前重编译正好是板上的 `db70a2df…`；改后只有 ELF 哈希（`0xb0–0xcf`）和镜像末尾校验和不同，程序本身相同，**泵 1 不重烧**。主机测试通过。
+
 ## 待记录（烧录时补）
 
 - 泵上电灯色（绿 = UART）。

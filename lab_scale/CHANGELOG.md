@@ -67,3 +67,10 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 用户要求网页控制泵：最终方案为单独的登录控制页 `/control`（个人账号、会话 cookie、锁定、只允许启动/停止），监控页保持只读无需登录。`pump_ctl.py` 新增 `web-user` 账号管理与共用的 `execute()`。
 - 控制页改为多设备"设备控制台"（设备登记在 `pump_ctl.DEVICES`，接口 `/api/control`），泵命名为泵 1 / Pump 1；中文 `/control`，英文 `/control/en`（共用 `control.js`）。各 README 按 2026-09-27 晚实际状态更新：泵 1 已烧录校准、Node 1/2 经 Type-C 接电源适配器、Jetson 重启后无自启导致约 4 小时数据缺口、相机恢复 LIVE。
 - 调试过程入档：pump-node-1 README 新增"调试过程"表（15 项：演示灯、`--check` 体积假象、泵板没上电、欠压拒绝、80 mL/min 超上限、校准被拒、两种校准独立、shell 尖括号、停泵方式、固件复查、设定流量卡片空、控制页三版、中英文、Jetson 无自启）；jetson_web README 新增"泵 1 接入与设备控制页"段（账号/ACL、命令通道、三版控制页、接收器需随参数表重启、测试迭代、服务重启时间）；CLAUDE.md 加"改参数表后两个服务都要重启"。用户 20:21 / 20:28 EDT 重启两服务后设定流量入库、英文控制页生效。20:46 EDT 前泵 1 的 ESP32 改接独立 USB 适配器，三个节点都不再接 Jetson USB。
+
+# 2026-09-29 — 新增 pump-node-2（泵 2，总 Node 5）
+
+- 用户：Node 5 与 Node 4 一样是泵，单独 ESP32，同样接线。记录为 DECISION 049（用途未定义，SPEC 未改）。
+- 泵固件中写死的节点名/传感器编号改为 `.ino` 里的宏，四个头文件在 pump-node-1、pump-node-2 之间逐字节相同。泵 1 重编译后只有 ELF 哈希与镜像校验和变化，不需要重烧。
+- 新目录 `lab_scale/pump-node-2/`（README、HARDWARE、WIRING、COMMUNICATION、PROGRESS、`script/PMP_MQTT/`）；网关加 node05、传感器 `PUMP2_ATLAS_PMP`、监控页面板、控制页设备 `pump2`、`pump_ctl.py --device`。测试 18 项通过；broker 账号已生成；尚未读 MAC、未烧录。
+- 同日：泵 2 备份、烧录（MAC 7C:4F:AD:B5:1C:D4，IP 192.168.88.247），用途暂定第二个旁路泵；两种校准完成（9.19 / 9.08 mL → `?CAL,3`），校准后上限 49.63 mL/min，复核 9.85 mL。

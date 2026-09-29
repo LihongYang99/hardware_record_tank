@@ -103,7 +103,10 @@ class MQTTTests(unittest.TestCase):
         self.assertIn('topic read shrimp/lab/shrimp-node04/cmd', pump)
         self.assertNotIn('/cmd', next(block for block in acl if block.startswith('shrimp-node01')))
         operator = next(block for block in acl if block.startswith('pump-operator'))
-        self.assertEqual(operator.strip().splitlines()[1:], ['topic write shrimp/lab/shrimp-node04/cmd'])
+        self.assertEqual(operator.strip().splitlines()[1:], ['topic write shrimp/lab/shrimp-node04/cmd', 'topic write shrimp/lab/shrimp-node05/cmd'])
+        pump2 = next(block for block in acl if block.startswith('shrimp-node05'))
+        self.assertIn('topic read shrimp/lab/shrimp-node05/cmd', pump2)
+        self.assertNotIn('shrimp-node04', pump2)
         self.assertNotIn('/cmd', next(block for block in acl if block.startswith('jetson-receiver')))
         # Re-running keeps passwords already flashed into nodes.
         self.assertEqual(prepare(Path(self.temp.name)/'mqtt', '127.0.0.2'), credentials)
@@ -189,15 +192,15 @@ class MQTTTests(unittest.TestCase):
             for line in lines:
                 self.store.ingest('shrimp-node04', base + line)
         with sqlite3.connect(self.store.path) as db:
-            self.assertIsNone(pump_ctl.last_dispense(db))
+            self.assertIsNone(pump_ctl.last_dispense(db, "shrimp-node04"))
             log('event=OPERATOR_DONE cmd_id=1 operator=li command=Cal,9.80 result=ER reply=NONE')
-            self.assertIsNone(pump_ctl.last_dispense(db))
+            self.assertIsNone(pump_ctl.last_dispense(db, "shrimp-node04"))
             log('event=OPERATOR_DONE cmd_id=2 operator=li command=D,10.00 result=OK reply=NONE')
-            self.assertIsNone(pump_ctl.last_dispense(db))
+            self.assertIsNone(pump_ctl.last_dispense(db, "shrimp-node04"))
             log('event=DISPENSE_DONE seq=1 cycle=1')
-            self.assertEqual(pump_ctl.last_dispense(db), 'D,10.00')
+            self.assertEqual(pump_ctl.last_dispense(db, "shrimp-node04"), 'D,10.00')
             log('event=OPERATOR_DONE cmd_id=3 operator=li command=D,10.00 result=OK reply=NONE', 'event=PUMP_RESET seq=1 cycle=1', 'event=DISPENSE_DONE seq=1 cycle=1')
-            self.assertIsNone(pump_ctl.last_dispense(db))
+            self.assertIsNone(pump_ctl.last_dispense(db, "shrimp-node04"))
         broker = RUNTIME / 'usr/sbin/mosquitto'
         directory = Path(self.temp.name)/'mqtt'
         credentials = prepare(directory, '127.0.0.2')
@@ -231,7 +234,7 @@ class MQTTTests(unittest.TestCase):
                 intruder.publish('shrimp/lab/shrimp-node04/cmd', b'id=1 operator=x cmd=X', qos=1).wait_for_publish()
                 intruder.disconnect(); intruder.loop_stop()
             args = argparse.Namespace(credentials=str(directory/'credentials.json'), host='127.0.0.1', port=port)
-            pump_ctl.publish(args, 'id=2 operator=li cmd=DC,50.00,*')
+            pump_ctl.publish(args, 'id=2 operator=li cmd=DC,50.00,*', 'shrimp/lab/shrimp-node04/cmd')
             deadline = time.monotonic() + 3
             while not received and time.monotonic() < deadline:
                 time.sleep(.05)

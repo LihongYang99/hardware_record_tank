@@ -72,6 +72,10 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(all(r['value'] is None and r['qc_flag'] == 'COMMUNICATION_ERROR' for r in self.store.latest()[0]))
         with self.assertRaises(ValueError):
             self.store.ingest('shrimp-node01', base + 'seq=3 pump_on=1 COMM=OK QC=UNVALIDATED')
+        with self.assertRaises(ValueError):  # pump 2 cannot write pump 1's sensor
+            self.store.ingest('shrimp-node05', base.replace('shrimp-node04', 'shrimp-node05') + 'seq=3 pump_on=1 COMM=OK QC=UNVALIDATED')
+        pump2 = 'node_id=shrimp-node05 boot_id=q sensor=PUMP2_ATLAS_PMP cycle=1 UTC=UNSYNCED seq=1 pump_on=0 motor_V=0.00 COMM=OK QC=UNVALIDATED'
+        self.assertEqual(self.store.ingest('shrimp-node05', pump2), 4)  # absent parameters are stored as NULL rows, never 0
 
     def test_identity_mismatch_is_rejected(self):
         with self.assertRaises(ValueError):
@@ -172,7 +176,7 @@ class StoreTests(unittest.TestCase):
             token = cookie.split(';')[0].split('=', 1)[1]
             session = call(root, '/api/session', cookie=token)[1]
             self.assertEqual(session['user'], 'li')
-            self.assertEqual([(d['id'], d['name'], d['kind']) for d in session['devices']], [('pump1', '泵 1', 'pump')])
+            self.assertEqual([(d['id'], d['name'], d['kind']) for d in session['devices']], [('pump1', '泵 1', 'pump'), ('pump2', '泵 2', 'pump')])
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token, 'text/plain')[0], 415)
             for body in ({'device': 'pump1', 'action': 'start', 'rate': 500}, {'device': 'pump1', 'action': 'start', 'rate': 'nan'},
                          {'device': 'pump1', 'action': 'dispense'}, {'device': 'pump1', 'action': 'start'},
@@ -180,7 +184,8 @@ class StoreTests(unittest.TestCase):
                 self.assertEqual(call(root, '/api/control', body, token)[0], 400, body)
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token)[1]['result'], 'OK')
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, token)[1]['command'], 'X')
-            self.assertEqual(sent, [('pump1', 'DC,50.00,*', 'li'), ('pump1', 'X', 'li')])
+            self.assertEqual(call(root, '/api/control', {'device': 'pump2', 'action': 'stop'}, token)[1]['command'], 'X')
+            self.assertEqual(sent, [('pump1', 'DC,50.00,*', 'li'), ('pump1', 'X', 'li'), ('pump2', 'X', 'li')])
             self.assertEqual(call(root, '/api/control/events', cookie=token)[0], 200)
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, 'forged-token')[0], 401)
             self.assertIn('Max-Age=0', call(root, '/api/logout', {}, token)[2])
@@ -195,7 +200,7 @@ class StoreTests(unittest.TestCase):
             for _ in range(5):
                 self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'wrong password'})[0], 401)
             self.assertEqual(call(root, '/api/login', {'username': 'li', 'password': 'correct horse'})[0], 429)
-            self.assertEqual(len(sent), 2)
+            self.assertEqual(len(sent), 3)
         finally:
             server.shutdown(); server.server_close()
 

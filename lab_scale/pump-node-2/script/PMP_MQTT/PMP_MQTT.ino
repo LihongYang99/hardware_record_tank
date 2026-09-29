@@ -1,4 +1,4 @@
-// pump-node-1 (overall Node 4, SPEC NODE 04 — BYPASS). ESP32-S3 N16R8 + Atlas EZO-PMP over UART.
+// pump-node-2 (overall Node 5, 泵 2). Same hardware, wiring and code as pump-node-1; only this file differs.
 // UART1 9600 8N1: GPIO18 RX <- pump TX (green), GPIO17 TX -> pump RX (white). Pump INT (blue) -> GPIO4.
 // Pump VCC (red) must be the ESP32 3V3 pin: at 5 V the pump TX would drive 5 V into GPIO18.
 // The 12 V motor supply goes only to the pump's own power input, never to the ESP32. UTC remains UNSYNCED.
@@ -10,9 +10,9 @@
 #include <esp_system.h>
 #include <esp_mac.h>
 #include "arduino_secrets.h"
-#define TELEMETRY_NODE "shrimp-node04"
-#define PUMP_SENSOR "PUMP_ATLAS_PMP"
-#define TELEMETRY_FIRMWARE "node04-pump-mqtt-0.2"
+#define TELEMETRY_NODE "shrimp-node05"
+#define PUMP_SENSOR "PUMP2_ATLAS_PMP"
+#define TELEMETRY_FIRMWARE "node05-pump-mqtt-0.2"
 #define TELEMETRY_COMMAND_TOPIC "shrimp/lab/" TELEMETRY_NODE "/cmd"
 #include "Telemetry.h"
 Telemetry telemetry;
@@ -25,7 +25,7 @@ char bootID[17];
 // a non-zero setpoint is re-sent after every pump reset. The motor only turns while its 12 V supply is connected.
 const double PUMP_DEFAULT_ML_MIN=0.0;
 // Factory MAC of the pump-node ESP32, read with esptool before flashing. All zeros never runs the pump.
-const uint8_t NODE_MAC[6]={0x7C,0x4F,0xAD,0xB5,0x33,0x38}; // esptool flash-id, 2026-09-27
+const uint8_t NODE_MAC[6]={0x7C,0x4F,0xAD,0xB5,0x1C,0xD4}; // esptool flash-id, 2026-09-29
 const int PUMP_RX=18, PUMP_TX=17, PUMP_INT=4;
 HardwareSerial pumpUART(1);
 PumpChannel pump(pumpUART,PUMP_INT,PUMP_DEFAULT_ML_MIN);

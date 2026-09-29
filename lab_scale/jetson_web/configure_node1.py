@@ -10,7 +10,8 @@ import re
 ROOT = Path(__file__).resolve().parent
 TARGETS = {'1': ROOT.parent / 'Node-1/script/DO_ORP_MQTT/arduino_secrets.h',
            '2': ROOT.parent / 'Node-2/script/Atlas_EC_pH_MQTT/arduino_secrets.h',
-           '4': ROOT.parent / 'pump-node-1/script/PMP_MQTT/arduino_secrets.h'}
+           '4': ROOT.parent / 'pump-node-1/script/PMP_MQTT/arduino_secrets.h',
+           '5': ROOT.parent / 'pump-node-2/script/PMP_MQTT/arduino_secrets.h'}
 
 
 def node1_wifi():
@@ -24,7 +25,7 @@ def node1_wifi():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--node', choices=TARGETS, default='1', help='Node number: 1, 2, or 4 = pump-node-1 (default 1)')
+    parser.add_argument('--node', choices=TARGETS, default='1', help='Node number: 1, 2, or 4 = pump-node-1, 5 = pump-node-2 (default 1)')
     parser.add_argument('--wifi-from-node1', action='store_true', help='Copy the lab Wi-Fi SSID/password already verified on Node 1')
     args = parser.parse_args()
     node = f'shrimp-node0{args.node}'

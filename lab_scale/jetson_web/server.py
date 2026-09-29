@@ -23,15 +23,18 @@ NODES = {
     'shrimp-node01': {'name': 'Node 1 · DO / ORP', 'ip': '192.168.88.252', 'mac': '44:b1:76:ce:d1:a8'},
     'shrimp-node02': {'name': 'Node 2 · EC / pH', 'ip': '192.168.88.251', 'mac': '44:b1:76:cc:d4:84'},
     'shrimp-node04': {'name': 'Pump 1 · 泵 1', 'ip': '192.168.88.248', 'mac': '7c:4f:ad:b5:33:38'},
+    'shrimp-node05': {'name': 'Pump 2 · 泵 2', 'ip': '192.168.88.247', 'mac': '7c:4f:ad:b5:1c:d4'},
 }
+PUMP_PARAMETERS = [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
+                   ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]
 SENSORS = {
     'DO_SEN0681': ('shrimp-node01', 'DFRobot SEN0681', [('DO_mg_L', 'DO', 'mg/L'), ('saturation_pct', '饱和度', '%'), ('temperature_C', 'DO 温度', '°C')]),
     'ORP_SEN0709': ('shrimp-node01', 'DFRobot SEN0709', [('ORP_mV', 'ORP', 'mV'), ('temperature_C', 'ORP 温度', '°C')]),
     'EC_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-EC', [('EC_uS_cm', 'EC', 'µS/cm'), ('salinity_PSU', '盐度', 'PSU')]),
     'PH_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-pH', [('pH', 'pH', 'pH')]),
     # pump_on is the controller's own report (D,?), not proof of water flow.
-    'PUMP_ATLAS_PMP': ('shrimp-node04', 'Atlas EZO-PMP', [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
-                                                         ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]),
+    'PUMP_ATLAS_PMP': ('shrimp-node04', 'Atlas EZO-PMP', PUMP_PARAMETERS),
+    'PUMP2_ATLAS_PMP': ('shrimp-node05', 'Atlas EZO-PMP', PUMP_PARAMETERS),
 }
 
 

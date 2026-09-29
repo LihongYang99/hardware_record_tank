@@ -8,14 +8,15 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[2]
 SKETCHES = {'1': ROOT / 'lab_scale/Node-1/script/DO_ORP_MQTT',
             '2': ROOT / 'lab_scale/Node-2/script/Atlas_EC_pH_MQTT',
-            '4': ROOT / 'lab_scale/pump-node-1/script/PMP_MQTT'}
+            '4': ROOT / 'lab_scale/pump-node-1/script/PMP_MQTT',
+            '5': ROOT / 'lab_scale/pump-node-2/script/PMP_MQTT'}
 BUILD = ROOT / '.codex-build'
 FQBN = 'esp32:esp32:esp32s3:FlashSize=16M,FlashMode=qio,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc'
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--node', choices=SKETCHES, default='1', help='Node number: 1, 2, or 4 = pump-node-1 (default 1)')
+    parser.add_argument('--node', choices=SKETCHES, default='1', help='Node number: 1, 2, or 4 = pump-node-1, 5 = pump-node-2 (default 1)')
     parser.add_argument('--check', action='store_true', help='Use empty template credentials; output must never be flashed')
     args = parser.parse_args()
     if not (BUILD / 'arduino-data/packages/esp32/hardware/esp32/3.3.11').exists():

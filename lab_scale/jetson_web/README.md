@@ -56,10 +56,10 @@
 
 | 文件 | 用途／产生的文件 | 什么时候运行 |
 | --- | --- | --- |
-| [prepare_mqtt.py](prepare_mqtt.py) | 为各节点（含 pump-node-1 的 `shrimp-node04`）和接收器生成 MQTT 账号、密码文件、ACL 和 broker 配置，存入私有的 `data/mqtt/`。已有账号密码会保留，只补缺失账号。 | 首次配置 broker，或核实需要重新生成配置时：`python3 prepare_mqtt.py --host 192.168.88.249`。需要 `mosquitto_passwd`；不会安装或启动 broker。更改地址前先确认 Jetson 实验室网卡地址。 |
-| [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持三个节点**：`python3 configure_node1.py --node 1`、`--node 2` 或 `--node 4`（pump-node-1）。Node 2 / 4 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
-| [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1`、`--node 2` 和 `--node 4`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
-| [pump_ctl.py](pump_ctl.py) | 旁路泵（pump-node-1）的操作工具：`start <mL/min>`、`stop`、`dispense`、`calibrate`、`query`、`show`、`web-user add|remove|list`（控制页账号）。控制页 `/control` 的登录与执行也在这里的 `WebControl`。经 MQTT 账号 `pump-operator` 发一条带编号的命令，等泵节点的回复写进数据库后显示结果；每条命令记入 `operator_event` 表。 | 需要时在本目录运行，例如 `python3 pump_ctl.py show`。校准必须加 `--note`。步骤见 [pump-node-1 README](../pump-node-1/README.md#控制与校准jetson-终端)。节点离线时命令会被丢弃，不会稍后执行。 |
+| [prepare_mqtt.py](prepare_mqtt.py) | 为各节点（含泵 1 `shrimp-node04`、泵 2 `shrimp-node05`）和接收器生成 MQTT 账号、密码文件、ACL 和 broker 配置，存入私有的 `data/mqtt/`。已有账号密码会保留，只补缺失账号。 | 首次配置 broker，或核实需要重新生成配置时：`python3 prepare_mqtt.py --host 192.168.88.249`。需要 `mosquitto_passwd`；不会安装或启动 broker。更改地址前先确认 Jetson 实验室网卡地址。 |
+| [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持三个节点**：`python3 configure_node1.py --node 1`、`--node 2` 或 `--node 4`（pump-node-1）、`--node 5`（pump-node-2）。Node 2 / 4 / 5 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
+| [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1`、`--node 2`、`--node 4` 和 `--node 5`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
+| [pump_ctl.py](pump_ctl.py) | 泵 1（pump-node-1）和泵 2（pump-node-2）的操作工具，`--device pump1|pump2` 选泵（默认泵 1）：`start <mL/min>`、`stop`、`dispense`、`calibrate`、`query`、`show`、`web-user add|remove|list`（控制页账号）。控制页 `/control` 的登录与执行也在这里的 `WebControl`。经 MQTT 账号 `pump-operator` 发一条带编号的命令，等泵节点的回复写进数据库后显示结果；每条命令记入 `operator_event` 表。 | 需要时在本目录运行，例如 `python3 pump_ctl.py show`。校准必须加 `--note`。步骤见 [pump-node-1 README](../pump-node-1/README.md#控制与校准jetson-终端)。节点离线时命令会被丢弃，不会稍后执行。 |
 | [camera_onvif.py](camera_onvif.py) | 向相机发送 ONVIF `GetStreamUri` 查询，取得 RTSP 地址并写入本地 `.env` 的 `CAMERA_RTSP_URI`。不修改相机设置。 | 相机网络可达后运行 `python3 camera_onvif.py`；默认 profile `001`，可用 `--profile` 指定。它只配置地址，不播放视频。`.env` 可能含账号密码，不得提交 GitHub；终端输出也应检查后再分享，目前脱敏没有覆盖 URI 中所有凭据格式。 |
 
 ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/script/DO_ORP_MQTT/)、[Node 2 MQTT 固件](../Node-2/script/Atlas_EC_pH_MQTT/) 和 [pump-node-1 固件](../pump-node-1/script/PMP_MQTT/)。上述配置／编译脚本只是帮助准备这些程序。
@@ -296,3 +296,10 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 4. **"设定流量"卡片一直空**。原因：`run_mqtt.py` 16:42 EDT 启动时 `server.py` 的 SENSORS 还没有 `target_mL_min`；接收器启动时导入参数表，之后改了不会跟着变，所以原始行里有、`measurement` 表里没有。控制页临时改为从状态行的原始字段读设定；20:21 EDT 用户重启接收器后（00:21:49Z 起）设定流量正常入库。
 5. **测试迭代**。锁定测试最初写成 4 次失败即锁，实际是成功登录清零计数、连续 5 次失败才锁，按设计改测试；`control.js` 一个内层变量与外层的电压变量同名，改名。最终 18 项通过（新增：未开启 403、未登录 401、错密码 / 不存在账号 401、锁定 429、cookie 属性、伪造 cookie、JSON / 范围 / 动作校验、登出、删账号会话立即失效、真实 broker ACL）。每一版控制页都用无头浏览器截图核对过排版。
 6. **服务重启**（用户操作，`ps` 核对）：`run_mqtt.py` 20:21:46 EDT；`server.py … --pump-control` 20:27:59 EDT。中英文控制页均可用；登录会话在内存里，网页重启后要重新登录。`--pump-control` 只加在正式服务上，8081 调试实例不加。
+
+## 2026-09-29：泵 2（pump-node-2，shrimp-node05）
+
+- 网关各处加入 node05：`server.py` 的 NODES 与传感器 `PUMP2_ATLAS_PMP`（每个传感器编号只属于一个节点，泵 2 不能冒充泵 1）、`mqtt_receiver.py`、`prepare_mqtt.py`（`pump-operator` 可写两台泵的 `cmd`）、`configure_node1.py`/`build_node1.py` 的 `--node 5`、中英文监控页"05 / PUMP 2"面板。
+- 控制页自动多出泵 2 卡片（设备登记 `pump_ctl.DEVICES['pump2']`）；终端用 `pump_ctl.py --device pump2 …`。
+- `prepare_mqtt.py` 已重新运行，原有账号密码不变。**要让 broker、接收器和网页用上这些改动，需要重启 `run_mqtt.py` 和 `server.py`**（烧录泵 2 之前做），命令见 [pump-node-2 固件 README](../pump-node-2/script/PMP_MQTT/README.md)。
+- 测试 18 项通过。

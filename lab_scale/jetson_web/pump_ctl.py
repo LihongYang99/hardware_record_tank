@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator control of 泵 1 / pump 1 (pump-node-1, shrimp-node04) from a Jetson terminal, and the
+"""Operator control of the pumps (泵 1 = pump-node-1 / shrimp-node04, 泵 2 = pump-node-2 / shrimp-node05) from a Jetson terminal, and the
 login-protected device control page used by server.py --pump-control.
 
 Each call sends one whitelisted command over MQTT (account pump-operator) and waits for the node's
@@ -29,8 +29,6 @@ if importlib.util.find_spec('paho') is None:
 import paho.mqtt.client as mqtt
 from server import fields, utc
 
-NODE = 'shrimp-node04'
-TOPIC = f'shrimp/lab/{NODE}/cmd'
 USERS_FILE = ROOT / 'data' / 'pump_web_users.json'
 # Devices on the control page. A new controllable device needs its own node firmware whitelist, an ACL line
 # for pump-operator on its cmd topic (prepare_mqtt.py COMMAND_NODES) and an entry here; node_id/sensor_id
@@ -39,7 +37,11 @@ DEVICES = {
     'pump1': {'name': '泵 1', 'name_en': 'Pump 1', 'kind': 'pump',
               'description': '旁路蠕动泵 · Atlas EZO-PMP · 泵节点 1（总 Node 4）',
               'description_en': 'Bypass peristaltic pump · Atlas EZO-PMP · pump node 1 (overall Node 4)',
-              'node_id': NODE, 'sensor_id': 'PUMP_ATLAS_PMP', 'topic': TOPIC},
+              'node_id': 'shrimp-node04', 'sensor_id': 'PUMP_ATLAS_PMP', 'topic': 'shrimp/lab/shrimp-node04/cmd'},
+    'pump2': {'name': '泵 2', 'name_en': 'Pump 2', 'kind': 'pump',
+              'description': '第二个旁路泵 · Atlas EZO-PMP · 泵节点 2（总 Node 5）',
+              'description_en': 'Second bypass pump · Atlas EZO-PMP · pump node 2 (overall Node 5)',
+              'node_id': 'shrimp-node05', 'sensor_id': 'PUMP2_ATLAS_PMP', 'topic': 'shrimp/lab/shrimp-node05/cmd'},
 }
 QUERIES = {'state': 'D,?', 'maxrate': 'DC,?', 'cal': 'Cal,?', 'volume': 'TV,?', 'voltage': 'PV,?', 'status': 'Status'}
 
@@ -65,12 +67,12 @@ def operator_name(name):
     return re.sub(r'[^A-Za-z0-9_.-]', '_', name)[:24] or 'unknown'
 
 
-def rows_after(db, after, pattern, node=NODE):
+def rows_after(db, after, pattern, node):
     return db.execute('SELECT id, line FROM raw_log WHERE node_id=? AND id>? AND line LIKE ? ORDER BY id',
                       (node, after, pattern)).fetchall()
 
 
-def wait_for(db, after, pattern, events, timeout, node=NODE):
+def wait_for(db, after, pattern, events, timeout, node):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         for row_id, line in rows_after(db, after, pattern, node):
@@ -80,40 +82,40 @@ def wait_for(db, after, pattern, events, timeout, node=NODE):
     return None, None
 
 
-def latest(db, pattern, node=NODE):
+def latest(db, pattern, node):
     row = db.execute('SELECT id, line FROM raw_log WHERE node_id=? AND line LIKE ? ORDER BY id DESC LIMIT 1',
                      (node, pattern)).fetchone()
     return row or (0, None)
 
 
-def last_dispense(db):
+def last_dispense(db, node):
     """Cal,<mL> only means something right after a completed dispense of the same pump power-up."""
-    done_id, done = latest(db, '%event=OPERATOR_DONE %')
+    done_id, done = latest(db, '%event=OPERATOR_DONE %', node)
     if not done or not fields(done).get('command', '').startswith('D,') or fields(done).get('result') != 'OK':
         return None
-    finished = rows_after(db, done_id, '%event=DISPENSE_DONE %')
-    reset = rows_after(db, done_id, '%event=BOOT %') + rows_after(db, done_id, '%event=PUMP_RESET %') + rows_after(db, done_id, '%event=PUMP_BOOT_READY %')
+    finished = rows_after(db, done_id, '%event=DISPENSE_DONE %', node)
+    reset = [r for e in ('BOOT', 'PUMP_RESET', 'PUMP_BOOT_READY') for r in rows_after(db, done_id, f'%event={e} %', node)]
     if not finished or (reset and min(r[0] for r in reset) < finished[0][0]):
         return None
     return fields(done)['command']
 
 
-def show(db):
-    _, line = latest(db, '% pump_on=%')
-    _, ready = latest(db, '%event=READY %')
+def show(db, d):
+    _, line = latest(db, '% pump_on=%', d['node_id'])
+    _, ready = latest(db, '%event=READY %', d['node_id'])
     if not line:
-        print('数据库里还没有泵 1 的状态记录。')
+        print(f"数据库里还没有{d['name']}的状态记录。")
         return
     f = fields(line)
     state = {'1': '运行中（控制器报告）', '0': '已停止'}.get(f.get('pump_on'), f.get('COMM', '?'))
-    print(f"泵 1：{state}  设定 {f.get('target_mL_min', '—')} mL/min  电机电压 {f.get('motor_V', '—')} V  "
+    print(f"{d['name']}：{state}  设定 {f.get('target_mL_min', '—')} mL/min  电机电压 {f.get('motor_V', '—')} V  "
           f"本次上电累计 {f.get('total_volume_mL', '—')} mL  QC={f.get('QC')}")
     if ready:
         r = fields(ready)
         print(f"校准状态 {r.get('calibration_reply')}  最大恒定流量 {r.get('max_rate_reply')}")
 
 
-def publish(args, payload, topic=TOPIC):
+def publish(args, payload, topic):
     credentials = json.loads(Path(args.credentials).read_text())
     client = mqtt.Client(client_id=f'pump-operator-{time.time_ns()}', clean_session=True)
     client.username_pw_set('pump-operator', credentials['pump-operator'])
@@ -131,7 +133,7 @@ def publish(args, payload, topic=TOPIC):
         client.loop_stop()
 
 
-def execute(db, conn, command, operator, note, timeout, node=NODE, topic=TOPIC):
+def execute(db, conn, command, operator, note, timeout, node, topic):
     """Send one command and wait for the node's answer. Returns (cmd_id, done_row_id, reply fields or None)."""
     cmd_id = str(time.time_ns())
     before = db.execute('SELECT COALESCE(MAX(id), 0) FROM raw_log').fetchone()[0]
@@ -295,7 +297,8 @@ class WebControl:
 
 
 def main():
-    parser = argparse.ArgumentParser(description='控制泵 1（旁路泵，pump-node-1）。每次只发一条命令，并显示泵的实际回复。')
+    parser = argparse.ArgumentParser(description='控制泵（泵 1 = pump1，泵 2 = pump2）。每次只发一条命令，并显示泵的实际回复。')
+    parser.add_argument('--device', choices=DEVICES, default='pump1', help='哪台泵：pump1（泵 1，默认）或 pump2（泵 2）')
     parser.add_argument('--operator', default=getpass.getuser(), help='操作人（记入日志）')
     parser.add_argument('--note', default='', help='备注；校准时写明量具和水，例如 "10mL量筒 淡水 气泡已排"')
     parser.add_argument('--db', default=str(ROOT / 'data/measurements.sqlite3'))
@@ -340,28 +343,29 @@ def main():
             print(f'已保存 {args.name}（{USERS_FILE}，只含哈希）。控制页：http://192.168.88.249:8080/control（网页服务需带 --pump-control）')
         return
     db = sqlite3.connect(args.db, timeout=15)
+    d = DEVICES[args.device]
     if args.action == 'show':
-        show(db)
+        show(db, d)
         return
     if args.action in ('calibrate', 'cal-clear') and not args.note.strip():
         raise SystemExit('校准必须用 --note 写明量具、用水和操作条件（SPEC §41 校准记录）。')
     command = pump_command(args)
-    dispensed = last_dispense(db) if args.action == 'calibrate' else None
+    dispensed = last_dispense(db, d['node_id']) if args.action == 'calibrate' else None
     if args.action == 'calibrate' and not dispensed:
         raise SystemExit('上一条操作不是已完成的 dispense，泵会拒绝校准。先接好 12 V，运行 dispense 10，'
                          '等泵停下（show 显示已停止）并量好体积，再 calibrate。')
-    _, ready = latest(db, '%event=READY %')
+    _, ready = latest(db, '%event=READY %', d['node_id'])
     pre = fields(ready).get('calibration_reply') if ready else None
-    print(f'发送 {command}，等待泵的回复…')
+    print(f"向{d['name']}发送 {command}，等待泵的回复…")
     try:
-        cmd_id, done_id, f = execute(db, args, command, operator_name(args.operator), args.note, args.timeout)
+        cmd_id, done_id, f = execute(db, args, command, operator_name(args.operator), args.note, args.timeout, d['node_id'], d['topic'])
     except (OSError, ConnectionError):
         raise SystemExit('命令没能发到 MQTT broker（run_mqtt.py 在运行吗？）。')
     if not f:
         raise SystemExit(f'{args.timeout:.0f} 秒内没有收到节点回复：节点可能离线。用 show 查看当前状态，不要重复发送前先确认。')
     note = args.note
     if args.action == 'calibrate' and f.get('result') == 'OK':
-        _, after = wait_for(db, done_id, '%event=READY %', ('READY',), 15)
+        _, after = wait_for(db, done_id, '%event=READY %', ('READY',), 15, d['node_id'])
         post = fields(after) if after else {}
         note = f"{args.note} | dispensed={dispensed} pre={pre} post={post.get('calibration_reply')} max_rate={post.get('max_rate_reply')}"
         print(f"校准前 {pre} → 校准后 {post.get('calibration_reply')}，最大恒定流量 {post.get('max_rate_reply')}")
@@ -376,7 +380,7 @@ def main():
     if result == 'ER' and f.get('reply') == '*TOOFAST':
         print('提示：超过泵的最大恒定流量，先用 query maxrate 查上限。')
     time.sleep(4.5)  # one 4 s poll later, the state line reflects the command
-    show(db)
+    show(db, d)
     if result != 'OK':
         sys.exit(1)
 
