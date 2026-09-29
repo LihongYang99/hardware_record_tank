@@ -61,6 +61,15 @@ class StoreTests(unittest.TestCase):
         self.assertTrue(all(r['value'] == 0 and r['qc_flag'] == 'CONFIGURATION_MISMATCH' for r in rows))
         self.assertEqual(json.loads(rows[0]['metadata'])['calibration_reply'], '?CAL,0')
 
+    def test_turbidity_is_stored_and_errors_are_not_zero(self):
+        base = 'node_id=shrimp-node06 boot_id=t sensor=TURB_SEN0710 cycle=1 request_uptime_ms=4000 UTC=UNSYNCED '
+        self.assertEqual(self.store.ingest('shrimp-node06', base + 'seq=1 raw=0103040D2E00DBD8CD turbidity_NTU=337.4 temperature_C=21.9 COMM=OK QC=UNVALIDATED'), 2)
+        self.assertEqual({r['parameter']: r['value'] for r in self.store.latest()[0]}, {'turbidity_NTU': 337.4, 'temperature_C': 21.9})
+        self.store.ingest('shrimp-node06', base + 'seq=2 raw= COMM=ERROR QC=COMMUNICATION_ERROR reason=TIMEOUT')
+        self.assertTrue(all(r['value'] is None and r['qc_flag'] == 'COMMUNICATION_ERROR' for r in self.store.latest()[0]))
+        with self.assertRaises(ValueError):
+            self.store.ingest('shrimp-node01', base + 'seq=3 turbidity_NTU=1.0 COMM=OK QC=UNVALIDATED')
+
     def test_pump_state_is_stored_and_errors_are_not_zero(self):
         base = 'node_id=shrimp-node04 boot_id=p sensor=PUMP_ATLAS_PMP cycle=1 request_uptime_ms=4000 UTC=UNSYNCED '
         self.assertEqual(self.store.ingest('shrimp-node04', base + 'seq=1 pump_on=1 int_pin=1 motor_V=12.10 total_volume_mL=5.25 '

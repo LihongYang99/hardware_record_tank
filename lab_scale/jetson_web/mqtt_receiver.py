@@ -16,7 +16,7 @@ if importlib.util.find_spec('paho') is None:
 import paho.mqtt.client as mqtt
 from server import Store, fields, utc
 
-MQTT_NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04', 'shrimp-node05')
+MQTT_NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04', 'shrimp-node05', 'shrimp-node06')
 NODE = 'shrimp-node01'
 TOPIC = f'shrimp/lab/{NODE}/'  # Node 1 prefix, kept for existing callers
 

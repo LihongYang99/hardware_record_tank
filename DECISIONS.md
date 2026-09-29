@@ -1372,6 +1372,24 @@ Decision:
 3. Code is shared, not forked: `PumpChannel.h`, `PumpParse.h`, `Telemetry.h`, `BenchLog.h` are byte-identical between the two pump sketches; only `PMP_MQTT.ino` (node id, sensor id, firmware tag, `NODE_MAC`) differs. Making node/sensor names macros did not change pump-node-1's program: its rebuilt image differs from the flashed 0.2 image only in the embedded ELF hash and image checksum (2026-09-29 byte comparison), so pump-node-1 was not reflashed.
 4. Risks: the same open items as DECISION 048 item 9 apply to this pump; after its own calibration (2026-09-29, `?CAL,3`; 10 mL commanded → 9.19 mL by volume, 9.08 mL timed) its constant-rate maximum is 49.63 mL/min, also slightly below the SPEC §29 conceptual 50–150 mL/min. If the second bypass becomes permanent, revise SPEC §5/§29–§31 (a second bypass loop, its flow cell and return path) before connecting it to the tank.
 
+# DECISION 050 — Turbidity Node (Node-6 = shrimp-node06)
+
+Date accepted: 2026-09-29, by the user (direct instruction: Node 6, DFRobot turbidity sensor, the only sensor on that node, wired like Node-1).
+
+Status:
+
+- Node allocation (dedicated ESP32, one RS485 bus via TTL↔RS485 converter, UART1 GPIO18 RX / GPIO17 TX): LOCKED for the lab bench
+- Sensor model: DFRobot SEN0710 — confirmed by the user 2026-09-29
+- Long-term 15–25 ppt immersion: unresolved (OPEN-03 remains open; Phase-1 BOM S-07 HOLD). Bench use in fresh water only until the manufacturer confirms
+
+Decision:
+
+1. Lab folder `lab_scale/Node-6/`, firmware `node_id=shrimp-node06`, sensor id `TURB_SEN0710`, parameters `turbidity_NTU` and `temperature_C` (probe temperature, not used as water temperature).
+2. Modbus RTU, factory address 1, 4800 8N1, function 03 registers 0–1 only (DFRobot protocol page, 2026-09-29). The firmware never writes address, baud, deviation or calibration registers. Because the sensor has its own bus, its address is not changed (the Phase-1 plan to set address 2 for the shared Node-1 bus does not apply).
+3. Code is shared: `Protocol.h`/`BenchChannel.h` byte-identical to Node-1, `Telemetry.h` byte-identical to Node-2; only `TURB_MQTT.ino` is new.
+4. Turbidity is published as NTU only; no eTSS until paired gravimetric samples establish a tank-specific model.
+5. Risks: wiring of power and A/B not individually verified; converter model not recorded; the temperature channel's range/accuracy are not documented, so it is not range-checked.
+
 ---
 
 # Current Critical Open Decisions

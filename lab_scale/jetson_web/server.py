@@ -24,6 +24,7 @@ NODES = {
     'shrimp-node02': {'name': 'Node 2 · EC / pH', 'ip': '192.168.88.251', 'mac': '44:b1:76:cc:d4:84'},
     'shrimp-node04': {'name': 'Pump 1 · 泵 1', 'ip': '192.168.88.248', 'mac': '7c:4f:ad:b5:33:38'},
     'shrimp-node05': {'name': 'Pump 2 · 泵 2', 'ip': '192.168.88.247', 'mac': '7c:4f:ad:b5:1c:d4'},
+    'shrimp-node06': {'name': 'Node 6 · 浊度', 'ip': '192.168.88.246', 'mac': '44:b1:76:ce:d8:6c'},
 }
 PUMP_PARAMETERS = [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
                    ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]
@@ -32,6 +33,8 @@ SENSORS = {
     'ORP_SEN0709': ('shrimp-node01', 'DFRobot SEN0709', [('ORP_mV', 'ORP', 'mV'), ('temperature_C', 'ORP 温度', '°C')]),
     'EC_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-EC', [('EC_uS_cm', 'EC', 'µS/cm'), ('salinity_PSU', '盐度', 'PSU')]),
     'PH_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-pH', [('pH', 'pH', 'pH')]),
+    # Turbidity is reported as NTU only; it is not eTSS until a site gravimetric calibration exists.
+    'TURB_SEN0710': ('shrimp-node06', 'DFRobot SEN0710', [('turbidity_NTU', '浊度', 'NTU'), ('temperature_C', '浊度探头温度', '°C')]),
     # pump_on is the controller's own report (D,?), not proof of water flow.
     'PUMP_ATLAS_PMP': ('shrimp-node04', 'Atlas EZO-PMP', PUMP_PARAMETERS),
     'PUMP2_ATLAS_PMP': ('shrimp-node05', 'Atlas EZO-PMP', PUMP_PARAMETERS),

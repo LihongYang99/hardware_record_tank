@@ -303,3 +303,9 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 - 控制页自动多出泵 2 卡片（设备登记 `pump_ctl.DEVICES['pump2']`）；终端用 `pump_ctl.py --device pump2 …`。
 - `prepare_mqtt.py` 已重新运行，原有账号密码不变。**要让 broker、接收器和网页用上这些改动，需要重启 `run_mqtt.py` 和 `server.py`**（烧录泵 2 之前做），命令见 [pump-node-2 固件 README](../pump-node-2/script/PMP_MQTT/README.md)。
 - 测试 18 项通过。
+
+## 2026-09-29：Node 6 浊度（shrimp-node06）
+
+- 网关加入 node06：`server.py` 的 NODES 与传感器 `TURB_SEN0710`（参数 `turbidity_NTU`、`temperature_C`）、`mqtt_receiver.py`、`prepare_mqtt.py`、`configure_node1.py`/`build_node1.py` 的 `--node 6`、中英文监控页"06 / TURBIDITY"面板。
+- `prepare_mqtt.py` 已重新运行，原有账号密码不变。烧录前要重启 `run_mqtt.py` 和 `server.py`，命令见 [Node-6 固件 README](../Node-6/script/TURB_MQTT/README.md)。
+- 测试 19 项通过（新增浊度入库、错误不写零、防冒充）。

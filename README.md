@@ -16,6 +16,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 | [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251 | MQTT 固件已烧录；EC、pH 实时进入 Jetson；EC 掉线已重接；USB Type-C 电源适配器独立供电 | EC 读数 0（K=1 与 K10 不符）、校准、温度补偿、UTC |
 | [lab_scale / pump-node-1](lab_scale/pump-node-1/README.md) | **泵 1**；shrimp-node04（总 Node 4）；单独 ESP32-S3；Atlas EZO-PMP 蠕动泵（UART） | 192.168.88.248 | 固件 0.2 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 45.36 mL/min；终端 `pump_ctl.py` 与网页控制页可开关、调流速；每条操作记录操作人和泵回复（DECISION 048）；USB Type-C 电源适配器独立供电，不接 Jetson | 流量计（"运行中"只是控制器报告）、盐水软管兼容性、黑线 GND 与电机负极是否相通、长期运行；45 mL/min 低于 SPEC §29 构想值 |
 | [lab_scale / pump-node-2](lab_scale/pump-node-2/README.md) | **泵 2**；shrimp-node05（总 Node 5）；单独 ESP32-S3；Atlas EZO-PMP（UART），与泵 1 同接线、同代码 | 192.168.88.247 | 2026-09-29 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 49.63 mL/min，复核 9.85 mL；中英文监控页面板、控制页卡片（DECISION 049） | 流量计、盐水软管兼容性；用途暂定第二个旁路泵，SPEC 未改 |
+| [lab_scale / Node-6](lab_scale/Node-6/README.md) | shrimp-node06；ESP32-S3；DFRobot SEN0710 浊度，RS485 Modbus | 192.168.88.246 | 2026-09-29 已烧录，实时进入网页，通信无错误（DECISION 050） | 读数停在 1000 NTU 满量程，待探头入水复查；盐水长期浸泡未确认；只报 NTU，不是 eTSS |
 | [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 水下 IP 相机，标签 IPC5MPIR-PBX10 | 192.168.1.88（MAC 已核对） | ONVIF 取得视频地址；子码流 704×576 实时预览进入网页 | 录像策略、相机时钟（差约 6 个月）、改默认密码、淡水款不批准目标盐度长期部署 |
 | [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文监控页 + 登录控制页；落库后才 ACK | **开机自启**（2026-09-27 重启后约 4 小时无数据）、磁盘限额/备份、迁移到 Raspberry Pi |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
@@ -70,6 +71,7 @@ lab_scale/
   pump-node-1/             # 泵 1：旁路蠕动泵（总 Node 4），同样拆分文档
     script/PMP_MQTT/       # 当前板上程序（MQTT 0.2，含操作命令）
   pump-node-2/             # 泵 2（总 Node 5），与泵 1 共用固件代码
+  Node-6/                  # 浊度（DFRobot RS485），script/TURB_MQTT/
   camera_node/             # 相机文档；接入代码在 jetson_web
   jetson_web/              # Jetson 临时网关：MQTT broker、接收器、数据库、网页
   CHANGELOG.md             # 仓库整理记录
@@ -77,8 +79,8 @@ jetson_setting/            # Jetson 设置与交接说明
 tank_scale/README.md        # 未来实际部署
 ```
 
-每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2|4|5` 生成
-`arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz；4 = pump-node-1，5 = pump-node-2），编译用 `build_node1.py --node 1|2|4|5`；真实密码文件禁止提交。
+每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2|4|5|6` 生成
+`arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz；4 = pump-node-1，5 = pump-node-2，6 = 浊度），编译用 `build_node1.py --node 1|2|4|5|6`；真实密码文件禁止提交。
 烧录前的板上 flash 备份在 `.codex-build/node*-backup/`（不入 Git），回退命令见各固件 README。
 
 完整阶段记录见 [lab_scale README](lab_scale/README.md) 与各节点的 PROGRESS.md。

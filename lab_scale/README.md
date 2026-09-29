@@ -6,7 +6,7 @@
 
 ### 方法
 
-台架由四块 ESP32-S3 节点（Node-1、Node-2、泵 1、泵 2）、一台水下 IP 相机和一台临时网关（Jetson）组成，全部接在实验室的 MikroTik 路由器上，不依赖校园网或互联网。
+台架由五块 ESP32-S3 节点（Node-1、Node-2、泵 1、泵 2、Node-6 浊度）、一台水下 IP 相机和一台临时网关（Jetson）组成，全部接在实验室的 MikroTik 路由器上，不依赖校园网或互联网。
 
 - **Node-1** 接两支 RS485 Modbus 探头（DO、ORP），每支探头经一块独立的 TTL↔RS485 转换器接到 ESP32 的一个独立 UART。
 - **Node-2** 接两支 Atlas 探头（EC、pH），每支探头经自己的 EZO 电路和 ISCCB-2 隔离载板接到 ESP32 的一个独立 UART。
@@ -33,6 +33,7 @@
 | [Node-2](Node-2/README.md) | shrimp-node02 | Atlas EC K10、Industrial pH No Temp，分别经 EZO/ISCCB-2 | 192.168.88.251 | 44:B1:76:CC:D4:84 |
 | [pump-node-1](pump-node-1/README.md) | shrimp-node04（总 Node 4） | Atlas EZO-PMP 旁路蠕动泵，UART 直连单独 ESP32 | 192.168.88.248 | 7C:4F:AD:B5:33:38 |
 | [pump-node-2](pump-node-2/README.md) | shrimp-node05（总 Node 5，泵 2） | Atlas EZO-PMP 第二个旁路泵（暂定），与泵 1 同接线、同代码 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 |
+| [Node-6](Node-6/README.md) | shrimp-node06 | DFRobot SEN0710 浊度，RS485 Modbus，单独 ESP32 | 192.168.88.246 | 44:B1:76:CE:D8:6C |
 | [camera_node](camera_node/README.md) | ONVIF name `NVT` | 水下 IP 相机（有线接路由器） | 192.168.1.88 | 00:12:34:C6:67:04 |
 | [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200 | — |
 
@@ -60,8 +61,8 @@
 当前板上程序是 MQTT 版本：Node-1 `Node-1/script/DO_ORP_MQTT/`，Node-2 `Node-2/script/Atlas_EC_pH_MQTT/`；泵 1 程序 `pump-node-1/script/PMP_MQTT/`（`--node 4`，0.2 已烧录）；泵 2 程序 `pump-node-2/script/PMP_MQTT/`（`--node 5`，与泵 1 共用头文件，待烧录）。旧版 `DO_ORP_WiFi/`、`Atlas_EC_pH_UART/`（仅 USB 串口）保留作回退。
 
 1. 保留整个 sketch 文件夹，所有 `.h` 都参与同一次编译，不单独上传。
-2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2|4|5 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
-3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2|4|5`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
+2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2|4|5|6 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
+3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2|4|5|6`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
 4. 烧录前核对 `/dev/serial/by-id/` 中的 MAC 与目标节点一致，并先回读 flash 备份（见各固件 README）。固件启动时也会检查出厂 MAC，不符就不运行传感器。
 5. USB Serial 115200 仍输出同样的日志行；拔掉 USB 不影响 MQTT 发送，但板子需要其他 5 V 供电。
 
@@ -117,6 +118,7 @@ Jetson 上没有 clang++ 时用 `g++` 代替，参数相同。Node-1、Node-2 �
 - 把 broker、接收器和网页迁到 Raspberry Pi（SPEC 正式架构），加开机自启和磁盘管理。
 - 泵 1：流量计（OPEN-10，接触流体需隔离）；确认 40–45 mL/min 是否满足以后的流通池（SPEC §29 构想 50–150）；盐水软管兼容性；万用表确认黑线 GND 与电机负极是否相通；长时间运行与 20 天自动复位恢复。
 - 泵 2（暂定第二个旁路泵）：已烧录、已校准（上限 49.63 mL/min，复核 9.85 mL）；若长期保留要修订 SPEC（DECISION 049）。
+- Node-6（浊度）：已接入；读数停在满量程，待探头入水复查；盐水长期浸泡待厂家确认（DECISION 050）。
 - Jetson：开机自启（2026-09-27 重启后约 4 小时数据未接收）。
 
 相机盐水部署限制见 camera_node/HARDWARE.md。正式部署资料保留在 [tank_scale](../tank_scale/README.md)。

@@ -74,3 +74,9 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 泵固件中写死的节点名/传感器编号改为 `.ino` 里的宏，四个头文件在 pump-node-1、pump-node-2 之间逐字节相同。泵 1 重编译后只有 ELF 哈希与镜像校验和变化，不需要重烧。
 - 新目录 `lab_scale/pump-node-2/`（README、HARDWARE、WIRING、COMMUNICATION、PROGRESS、`script/PMP_MQTT/`）；网关加 node05、传感器 `PUMP2_ATLAS_PMP`、监控页面板、控制页设备 `pump2`、`pump_ctl.py --device`。测试 18 项通过；broker 账号已生成；尚未读 MAC、未烧录。
 - 同日：泵 2 备份、烧录（MAC 7C:4F:AD:B5:1C:D4，IP 192.168.88.247），用途暂定第二个旁路泵；两种校准完成（9.19 / 9.08 mL → `?CAL,3`），校准后上限 49.63 mL/min，复核 9.85 mL。
+
+# 2026-09-29 — 新增 Node-6（浊度）
+
+- 用户：Node 6 只接一个 DFRobot 浊度传感器，接线同 Node-1。记录为 DECISION 050（型号按 SEN0710，待核对标签；盐水长期浸泡未确认）。
+- 新目录 `lab_scale/Node-6/`（README、HARDWARE、WIRING、COMMUNICATION、PROGRESS、`script/TURB_MQTT/`、`tests/`）；`Protocol.h`/`BenchChannel.h` 取自 Node-1、`Telemetry.h` 取自 Node-2，均逐字节相同。
+- 网关加 node06、传感器 `TURB_SEN0710`、中英文监控页面板；测试 19 项通过；broker 账号已生成；尚未读 MAC、未烧录。
