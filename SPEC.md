@@ -1,8 +1,121 @@
 # Aquaculture Real-Time Monitoring Platform
 ## Engineering Specification
 
-Version: 0.3
-Status: Engineering Specification — tank description updated 2026-09-14; bypass pump node updated 2026-09-27 (DECISION 048)
+Version: 0.4
+Status: Engineering Specification — current lab baseline and open nitrogen-monitoring scope updated 2026-09-28; physical progress evidence through 2026-09-27
+
+## Revision scope and evidence
+
+This revision was requested by the project owner to reflect current progress and
+support handover for nitrogen-monitoring research. It records the implemented lab
+baseline separately from the required deployment architecture. It does not certify
+hardware safety, analytical accuracy, continuous operation, or completion of Phase 1.
+No firmware, wiring, procurement, or automatic-control change is authorized by this
+documentation update alone.
+
+Evidence: [lab overview](lab_scale/README.md),
+[gateway and website](lab_scale/jetson_web/README.md),
+[pump commissioning record](lab_scale/pump-node-1/PROGRESS.md), and the owner's
+2026-09-28 statement that nitrogen-specific probes, analyzers and flow cells have
+not been purchased. These are dated records, not a fresh live-device inspection.
+Detailed historical logs remain in the corresponding node folders.
+
+## 0. Current lab baseline and deployment boundary
+
+### 0.1 Implemented lab system
+
+The lab currently has three ESP32 nodes and one independent IP camera. Lab node
+names are not the final MID/BOTTOM station assignments in Section 5.
+
+| Lab module | Recorded equipment and interface | Current evidence and limits |
+|---|---|---|
+| Node-1 / shrimp-node01 | ESP32-S3; DFRobot SEN0681 DO and SEN0709 ORP; separate RS485/UART paths | Real replies and MQTT ingestion recorded; analytical validation incomplete |
+| Node-2 / shrimp-node02 | ESP32-S3; Atlas EZO-EC with K10 probe and EZO-pH with Industrial pH No Temp probe; separate isolated UART paths | Real replies and MQTT ingestion recorded; EC setting K=1 conflicts with K10 probe; calibration and sample-temperature compensation unresolved |
+| pump-node-1 / shrimp-node04 | Dedicated ESP32 and purchased Atlas EZO-PMP; UART | Status telemetry, manual commands and calibration operations recorded; not accepted as a validated bypass or unattended-control system |
+| camera_node | Barlus underwater IP camera; network stream independent of ESP32 | RTSP ingestion and low-frame-rate browser preview recorded; recording/ML not established; long-term target-salinity deployment not approved |
+| Temporary gateway | Jetson Orin Nano; MQTT broker, Python receiver, SQLite and web service | Lab integration exists; Raspberry Pi migration and deployment acceptance remain open |
+
+The two sensor boards are recorded as N16R8, distinct from the preferred N8R8
+in Section 4. This does not approve an undocumented board's electrical ratings.
+The three ESP32 nodes use independent USB power adapters; MQTT, not a USB serial
+connection to Jetson, carries operational telemetry. Adapter models remain
+NOT VERIFIED. Existing power/protection requirements are not relaxed.
+
+Current lab data paths:
+
+```text
+DO/ORP or EC/pH -> ESP32 -> Wi-Fi/MQTT -> Jetson -> SQLite -> monitoring page
+IP camera -> RTSP -> Jetson -> browser image preview
+Authenticated control page -> Jetson -> MQTT -> pump ESP32 -> pump
+Pump replies/status -> MQTT -> SQLite -> monitoring/control pages
+```
+
+The lab Jetson dependency is temporary: switching off this gateway stops reception
+and the website. Sections 3, 4, 43 and 47 specify the final Raspberry Pi-based
+requirement, not a capability already met by this prototype. Nitrogen research
+must not delay or require replacement of the basic monitoring platform.
+
+### 0.2 Website and data handling
+
+- Implemented monitoring pages combine water-quality readings, trends, camera
+  preview and pump state; Chinese and English interfaces are recorded.
+- A separate authenticated device-control page supports manual pump start/stop
+  and rate commands with operation records. This is not water-quality-driven
+  closed-loop control, and command acceptance is not proof of physical flow.
+- SQLite preserves original logs separately from parsed measurements and issues;
+  CSV export and recent-point trends are implemented. Raw diagnostics remain
+  available even when not displayed as measurement curves.
+- MQTT application acknowledgement follows database commit. Nodes use bounded
+  RAM queues; this is not durable storage or a guarantee against all data loss.
+- Sensor polling currently uses 4-second rounds. Common scheduling does not
+  establish simultaneous sampling within or across nodes.
+- Sample UTC is not yet trustworthy: preserve UNSYNCED/null sample timestamps,
+  boot identity, sequence and uptime. Website receipt-time axes must not be
+  described as synchronized sample time; gateway clock accuracy also needs
+  verification.
+- Communication success and scientific QC remain separate. Preserve Node-2
+  configuration/compensation warnings; do not interpret its abnormal zero EC
+  as a validated water measurement. Do not replace missing values with zero.
+
+### 0.3 Recorded tests and open acceptance gates
+
+- A 25-second receiver interruption followed by gap-free catch-up and node
+  power-cycle upload recovery are recorded. This does not establish resilience
+  to router failure, prolonged network loss or loss of node power.
+- The recorded queue capacity is 64 records per node; buffering duration depends
+  on message production. RAM data is lost on power failure.
+- A Jetson restart without service autostart caused a multi-hour reception gap.
+  Automatic startup/recovery, durable buffering, storage management, backup and
+  long-duration tests remain required.
+- Pump timed-dispense verification recorded 9.7 mL for a 10 mL / 1 minute command
+  after calibration: one user-reported result, not a repeatability/accuracy pass.
+  The controller reported a calibrated constant-rate ceiling of 45.36 mL/min;
+  this is not an independently measured installed-system flow rate. Compatibility
+  with the conceptual 50–150 mL/min bypass target remains unresolved.
+- Pump reset/restart, rejected commands, calibration after resets and restoration
+  of power require explicit safety acceptance tests before unattended use.
+  Existing reset-resume requirements must not be interpreted as permission to
+  resume a rejected or cancelled operator command.
+- Sensor reference validation, EC configuration, temperature compensation, UTC,
+  long-term saltwater compatibility, electrical protection and final enclosure
+  acceptance remain open. Purchased/communicating does not mean LOCKED.
+
+**Phase 1 is not complete.** Section 47 remains the acceptance criterion.
+
+### 0.4 Current nitrogen-monitoring workstream
+
+The owner requests a research-grade automatic time series for TAN/ammonium,
+nitrite and nitrate, with non-ionized ammonia measured or derived only where
+scientifically justified. Nitrogen-specific probes, analyzers and flow cells are
+not purchased and no technology, SKU, node allocation, budget or measurement
+interval is locked. Existing pumps and general monitoring equipment are separate
+from this unpurchased analytical subsystem.
+
+In-situ probes, flow-through sensors, automated wet chemistry, commercial online
+analyzers and hybrid systems are eligible for comparison under Section 34.
+There is no requirement to force all analytes into submerged probes or a shared
+flow cell. Research and an evidence-backed proposal are authorized; procurement,
+implementation and changes to binding deployment decisions require owner approval.
 
 ---
 
@@ -1043,7 +1156,7 @@ if scientifically appropriate.
 
 ---
 
-# 34. NH4 / TAN Scientific Constraint
+# 34. Nitrogen Monitoring Scope and Scientific Constraints
 
 NH4+ is not the same measurement as TAN.
 
@@ -1062,6 +1175,76 @@ NH3 calculations must incorporate:
 pH
 temperature
 salinity
+
+## 34.1 Measurement definition and open technology selection
+
+The target analytes are TAN, NH4+-N, NH3-N, NO2--N and NO3--N as scientifically
+feasible. A separate instrument is not required for every reported parameter.
+Every proposed channel must identify what is directly measured, calculated or
+used only as a proxy, and distinguish mg/L as N from ion/molecule mass units.
+Conversions and derived ammonia require a documented method, applicable
+temperature/salinity/pH conventions, input QC and uncertainty assessment.
+
+Concentration time series alone shall not be presented as a complete nitrogen
+budget or direct measurement of nitrification/denitrification rates.
+
+Technology selection remains open. Compare direct probes, flow-through sensing,
+automated wet-chemical analysis, commercial online analyzers and hybrid reference/
+proxy approaches. A flow cell does not by itself resolve matrix interference.
+Require evidence for analytical performance in 15–25 ppt water, not merely an
+immersion or enclosure rating. Missing evidence is NOT VERIFIED, not approval.
+
+Target concentration ranges, event timescales, acceptable uncertainty, maintenance
+capacity and budget must be confirmed before procurement. Manufacturer manuals,
+method documentation and applicable peer-reviewed validation must support
+critical specifications. Do not invent prices, detection limits, interfaces,
+reagent consumption or saltwater compatibility.
+
+## 34.2 Automatic time series and sampling paths
+
+Distinguish continuous sensor response from periodic automated analysis. Report
+response/analysis time, transport delay, flushing, calibration downtime and actual
+valid-result frequency. Web refresh and serial polling are not analytical time
+resolution. Section 28 sampling targets do not mandate an unsupported analyzer
+cycle time.
+
+For a bypass or analyzer proposal, document representative sampling, tubing/dead
+volume, flow requirements, carryover, bubbles, fouling, cleaning, pretreatment,
+sample alteration and daily sample/waste volumes. State whether filtration changes
+the measurand. Calculate with declared assumptions and confirmed operating water
+volume before assessing depletion or replacement effects.
+
+Keep reagent-treated samples, standards and cleaning solutions out of the tank
+return. Provide segregated waste handling and failure responses for leaks,
+blockage, pump failure, empty reagents and full waste vessels. Reuse of EZO-PMP
+is optional and conditional on verified hydraulic/chemical suitability; do not
+assume one pump can perform all sampling, dosing, flushing and waste functions.
+
+The Mg/Ca bypass concept in Sections 29–33 is not a locked nitrogen-analysis
+water path. Any shared-path proposal must justify compatibility and contamination
+control before approval.
+
+## 34.3 Validation and data integration gates
+
+Before deployment require a documented plan for standards/blanks, target-salinity
+matrix checks, replicated real-water comparisons to an appropriate independent
+reference method, recovery, drift, carryover, response time and valid-data yield.
+Acceptance limits must be justified and approved; one successful measurement or
+a high correlation alone does not establish accuracy.
+
+Integrate through a verified interface into the MQTT/gateway/database system;
+an analyzer with a suitable native network interface need not pass through ESP32.
+Preserve sample time, analysis-complete time and gateway-received time separately,
+plus raw responses, units/basis, sequence, QC, calibration, dilution factors and
+algorithm versions for derived values. Unknown time remains unknown. Display
+analysis-in-progress, result age and stale/invalid state without relabeling an old
+result as a new sample. Preserve below-detection/quantification qualifiers rather
+than replacing them with zero.
+
+Required proposal deliverables: evidence-backed route comparison, preferred and
+fallback architectures, water/data-flow diagrams, itemized equipment and operating
+costs, verification plan, supplier questions, unresolved risks and staged approval
+gates. No nitrogen equipment is LOCKED by this revision.
 
 ---
 
