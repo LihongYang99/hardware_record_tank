@@ -10,7 +10,7 @@
 
 ## 当前状态（2026-09-29）
 
-- 接线：用户完成，与泵 1 相同（GPIO17 → 白、GPIO18 → 绿），见 [WIRING.md](WIRING.md)。板子插在 Jetson USB 上（`/dev/serial/by-id/usb-Espressif_Systems_Espressif_Device_123456-if00`，ESP32-S3 原生 USB 口）。
+- 接线：用户完成，与泵 1 相同（GPIO17 → 白、GPIO18 → 绿），见 [WIRING.md](WIRING.md)。供电：ESP32 经 USB Type-C 直接接电源适配器（5 V，用户 2026-09-29 晚改接，已离开 Jetson USB，与其他节点相同）；电机由单独 12 V 适配器供电。适配器型号未记录。烧录或看串口日志时再插回 Jetson（原生 USB 口，烧录前按 BOOT + RST，烧完单按 RST）。
 - 已完成：固件（与泵 1 共用代码）、编译检查、broker 账号 `shrimp-node05` 与 ACL、本地 Wi-Fi/MQTT 配置、网关和两个监控页的"05 / PUMP 2"面板、控制页的泵 2 卡片。自动测试 18 项通过。
 - 2026-09-29 已烧录 `node05-pump-mqtt-0.2`：联网、MQTT 在线、泵初始化通过（泵固件 `?I,PMP,1.06`，`?CAL,0` 未校准，未校准恒定流量上限 `?MAXRATE,54.66`）。当前停止、设定 0；12 V 未接（电机 0.00 V）。
 - 2026-09-29 已接 12 V（电机约 12 V）；两种校准完成（`?CAL,3`）：10 mL 指令实测 9.19 mL（体积）、9.08 mL（按时间）。**校准后恒定流量上限 49.63 mL/min**（泵 1 为 45.36）。
