@@ -21,13 +21,13 @@
 - **独立串口而不是共用总线**：Node-1 两支探头出厂 Modbus 地址都是 1，并在同一条 RS485 上会互相冲突，固件也刻意不改探头地址；Node-2 的两块隔离载板不能共用 TX/RX。分开后一支探头超时或掉线也不影响另一支（SPEC §39"单个传感器故障不能冻结整个节点"）。
 - **共同调度但不是同步采样**：两支探头在同一轮次里先后请求，时间差为毫秒级；两个节点之间也没有同步。日志里的 `cycle` 记录轮次，`request_uptime_ms` 记录实际发出时刻，方便以后分析。
 - **RAM 队列有上限**：每节点 64 条，满了丢弃最新并计数 `mqtt_lost`，而不是让采集停下来。代价是断网只能缓冲约 80 s（Node-1）/ 27 s（Node-2），断电全丢。持久缓存（PSRAM / LittleFS / SD 卡）是下一阶段。
-- **以 MAC 核对身份**：IP 由 DHCP 分配会变，所以文档以 MAC 为准。固件启动时读 eFuse 出厂 MAC，不符就不启动传感器（`WRONG_BOARD`），防止把 Node-1 的程序烧进 Node-2。
+- **以 MAC 核对身份**：IP 由路由器 DHCP 分配，2026-09-30 起按 MAC 做了静态租约，但文档仍以 MAC 为准。固件启动时读 eFuse 出厂 MAC，不符就不启动传感器（`WRONG_BOARD`），防止把 Node-1 的程序烧进 Node-2。
 - **COMM 与 QC 分开**：`COMM=OK` 只表示协议层（CRC、帧长、ASCII 格式）通过；`QC` 才表示读数是否可用。目前所有读数 `UNVALIDATED`，因为探头都还没校准。
 - **UTC 未同步就如实标记**：局域网没有 NTP 源，节点只有开机后的毫秒计数，所以一律 `UTC=UNSYNCED`；网页显示的是网关接收时间。
 
 ## 1. 节点与网络
 
-| 文件夹 | 固件 node_id / hostname | 设备 | IP（2026-09-27 实测） | MAC |
+| 文件夹 | 固件 node_id / hostname | 设备 | IP（静态租约，2026-09-30 核对） | MAC |
 |---|---|---|---|---|
 | [Node-1](Node-1/README.md) | shrimp-node01 | SEN0681 DO、SEN0709 ORP | 192.168.88.252 | 44:B1:76:CE:D1:A8 |
 | [Node-2](Node-2/README.md) | shrimp-node02 | Atlas EC K10、Industrial pH No Temp，分别经 EZO/ISCCB-2 | 192.168.88.251 | 44:B1:76:CC:D4:84 |
@@ -35,10 +35,10 @@
 | [pump-node-2](pump-node-2/README.md) | shrimp-node05（总 Node 5，泵 2） | Atlas EZO-PMP 第二个旁路泵（暂定），与泵 1 同接线、同代码 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 |
 | [Node-6](Node-6/README.md) | shrimp-node06 | DFRobot SEN0710 浊度，RS485 Modbus，单独 ESP32 | 192.168.88.246 | 44:B1:76:CE:D8:6C |
 | [camera_node](camera_node/README.md) | ONVIF name `NVT` | 水下 IP 相机（有线接路由器） | 192.168.1.88 | 00:12:34:C6:67:04 |
-| [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200 | — |
+| [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200；学校 Wi-Fi 10.141.48.128（会变） | 4C:BB:47:62:1F:66 |
 
-路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。两节点通过 Wi-Fi，相机通过有线 PoE 路径；用户已提供 TP-Link/Omada POE150S 注入器链接，实物版本待核对。Barlus 304 相机商品标明淡水用途，不批准目标盐度下长期部署；详见 camera_node/HARDWARE.md。没有上游互联网时局域网采集和网页仍可工作；但目前没有 UTC 来源。
-未配置固定地址；不要仅凭旧 IP 判断设备身份，也不要把摄像机 IP 猜成空闲地址。
+路由器截图：MikroTik hAP ax3，LAN 192.168.88.1/24。五个 ESP32 节点通过 Wi-Fi，相机通过有线 PoE 路径；用户已提供 TP-Link/Omada POE150S 注入器链接，实物版本待核对。Barlus 304 相机商品标明淡水用途，不批准目标盐度下长期部署；详见 camera_node/HARDWARE.md。没有上游互联网时局域网采集和网页仍可工作；但目前没有 UTC 来源。
+2026-09-30 起 Jetson 和各 ESP32 的地址在路由器上按 MAC 做了静态租约（用户设置）；相机地址是相机内设的。仍以 MAC 核对身份，不要把摄像机 IP 猜成空闲地址。
 
 ## 2. 已完成与边界
 

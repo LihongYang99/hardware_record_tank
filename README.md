@@ -10,7 +10,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 监控页（不需要登录，只读）：中文 `http://192.168.88.249:8080`，英文 `/en`。设备控制页（需要账号登录）：中文 `/control`，英文 `/control/en`。仅实验室局域网可访问，说明见 [jetson_web](lab_scale/jetson_web/README.md)。
 在实验室外：先连学校 Cisco VPN，再用 SSH 端口转发访问，见 [远程访问说明](jetson_setting/REMOTE_ACCESS.md)。学校不允许在校园网运行第三方 VPN / 隧道，因此不使用 Tailscale 等。
 
-| 分区 | 设备 | 局域网 IP（实测） | 已完成 | 尚未完成 |
+| 分区 | 设备 | 局域网 IP | 已完成 | 尚未完成 |
 |---|---|---|---|---|
 | [lab_scale / Node-1](lab_scale/Node-1/README.md) | shrimp-node01；ESP32-S3 N16R8；DFRobot SEN0681 DO + SEN0709 ORP | 192.168.88.252 | MQTT 固件已烧录；数据实时进入 Jetson 数据库与网页；断线 25 s 补发无缺口；USB Type-C 电源适配器独立供电 | 校准/验证、UTC、断电持久缓存、长期稳定性 |
 | [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251 | MQTT 固件已烧录；EC、pH 实时进入 Jetson；EC 掉线已重接；USB Type-C 电源适配器独立供电 | EC 读数 0（K=1 与 K10 不符）、校准、温度补偿、UTC |
@@ -21,12 +21,29 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 | [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文监控页 + 登录控制页；落库后才 ACK | **开机自启**（2026-09-27 重启后约 4 小时无数据）、磁盘限额/备份、迁移到 Raspberry Pi |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
 
-IP 来自 DHCP，重启后可能变化，以 MAC 核对身份为准。
+Jetson 和各 ESP32 节点的 IP 已固定（路由器静态租约），完整列表见下方[设备 IP 一览](#设备-ip-一览2026-09-30-核对)；仍以 MAC 核对身份为准。
 所有读数仍为 `UNVALIDATED`（未校准），采样 UTC 未同步，网页时间是 Jetson 接收时间。
 节点断网缓冲只在 RAM：Node 1 约 80 s、Node 2 约 27 s、泵 1 约 2 分钟（估算），断电丢失；容量与限制条件见各固件 README。
 Jetson 重启后服务不会自动启动，需要手动运行启动命令（见 jetson_web README）。
 Jetson 是临时网关，正式架构仍按 SPEC 使用 Raspberry Pi。
 2026-09-27 当天泵 1 从接线到网页控制的调试过程（现象 → 原因 → 处理）见 [pump-node-1 README](lab_scale/pump-node-1/README.md#调试过程2026-09-27摘要)，网关侧见 [jetson_web README](lab_scale/jetson_web/README.md#2026-09-27-晚泵-1-接入与设备控制页)。
+
+## 设备 IP 一览（2026-09-30 核对）
+
+实验室局域网 `192.168.88.0/24`，路由器 MikroTik hAP ax3。下表除相机和学校网外，都已在路由器上按 MAC 做了 DHCP 静态租约（用户 2026-09-30 设置），IP 与 MAC 的对应由 Jetson ARP 核对。
+
+| 设备 | 节点名 | IP | MAC | 连接 / 端口 |
+|---|---|---|---|---|
+| 路由器 MikroTik hAP ax3 | — | 192.168.88.1 | — | 网关、DHCP；管理页 `http://192.168.88.1` |
+| **Jetson（网关）** 有线 `enP8p1s0` | — | **192.168.88.249** | 4C:BB:47:62:1F:66 | MQTT `:1883`；监控页 `:8080`（`/`、`/en`）；控制页 `/control`、`/control/en`。所有节点固件都写死这个地址 |
+| Node 1 · DO / ORP | shrimp-node01 | 192.168.88.252 | 44:B1:76:CE:D1:A8 | Wi-Fi 2.4 GHz |
+| Node 2 · EC / pH | shrimp-node02 | 192.168.88.251 | 44:B1:76:CC:D4:84 | Wi-Fi 2.4 GHz |
+| 泵 1 | shrimp-node04 | 192.168.88.248 | 7C:4F:AD:B5:33:38 | Wi-Fi 2.4 GHz |
+| 泵 2 | shrimp-node05 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 | Wi-Fi 2.4 GHz |
+| Node 6 · 浊度 | shrimp-node06 | 192.168.88.246 | 44:B1:76:CE:D8:6C | Wi-Fi 2.4 GHz |
+| 水下相机 | ONVIF `NVT` | 192.168.1.88 | 00:12:34:C6:67:04 | 有线 PoE；相机内设固定地址，另一网段 |
+| Jetson 相机网段临时地址 | — | 192.168.1.200/24 | 同 Jetson 有线 | 每次重启后 `sudo ip addr add 192.168.1.200/24 dev enP8p1s0` |
+| Jetson 学校 Wi-Fi `wlP1p1s0`（eduroam） | — | 10.141.48.128/23 | — | 学校 DHCP，**会变**；只用于 VPN + SSH 远程访问 |
 
 ## 方法与原理（给参观者的整体介绍）
 

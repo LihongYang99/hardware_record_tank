@@ -3,7 +3,7 @@
 ## 身份与 IP
 
 - 固件标识：`shrimp-node06`；ESP32-S3（单独一块；esptool 2026-09-29：QFN56 rev v0.2，内置 8 MB PSRAM，16 MB flash）。
-- MAC：`44:B1:76:CE:D8:6C`（已写入固件 `NODE_MAC`；注意与 Node 1 的 `44:B1:76:CE:D1:A8` 只差后两段）。IP：`192.168.88.246`（2026-09-29 固件日志与 Jetson ARP 一致，DHCP，未固定）。
+- MAC：`44:B1:76:CE:D8:6C`（已写入固件 `NODE_MAC`；注意与 Node 1 的 `44:B1:76:CE:D1:A8` 只差后两段）。IP：`192.168.88.246`（2026-09-29 固件日志与 Jetson ARP 一致；MikroTik DHCP 静态租约（用户 2026-09-30 设置））。
 - 传感器：DFRobot **SEN0710** RS485 浊度传感器（用户 2026-09-29 核对确认），本节点只有这一个。
 - 数据库传感器编号 `TURB_SEN0710`，参数 `turbidity_NTU`（NTU）和 `temperature_C`（探头温度，°C）。决策记录 DECISION 050。
 

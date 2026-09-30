@@ -309,3 +309,18 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 - 网关加入 node06：`server.py` 的 NODES 与传感器 `TURB_SEN0710`（参数 `turbidity_NTU`、`temperature_C`）、`mqtt_receiver.py`、`prepare_mqtt.py`、`configure_node1.py`/`build_node1.py` 的 `--node 6`、中英文监控页"06 / TURBIDITY"面板。
 - `prepare_mqtt.py` 已重新运行，原有账号密码不变。烧录前要重启 `run_mqtt.py` 和 `server.py`，命令见 [Node-6 固件 README](../Node-6/script/TURB_MQTT/README.md)。
 - 测试 19 项通过（新增浊度入库、错误不写零、防冒充）。
+
+## 2026-09-30：固定 IP
+
+用户在 MikroTik 路由器上把以下设备的 DHCP 租约全部设为静态（Make Static）。Jetson 的 `192.168.88.249` 原来也是 DHCP 分配的，而所有节点固件里写死了 MQTT 地址 `192.168.88.249`，固定它最重要。
+
+| 设备 | MAC | IP |
+|---|---|---|
+| Jetson（网关，有线 `enP8p1s0`） | 4C:BB:47:62:1F:66 | 192.168.88.249 |
+| Node 1 | 44:B1:76:CE:D1:A8 | 192.168.88.252 |
+| Node 2 | 44:B1:76:CC:D4:84 | 192.168.88.251 |
+| 泵 1 | 7C:4F:AD:B5:33:38 | 192.168.88.248 |
+| 泵 2 | 7C:4F:AD:B5:1C:D4 | 192.168.88.247 |
+| Node 6 | 44:B1:76:CE:D8:6C | 192.168.88.246 |
+
+对应关系 2026-09-30 由 Jetson ARP 核对；路由器上的静态租约是用户操作，Claude 没有登录路由器核对。相机 `192.168.1.88` 是相机内设的固定地址，不经 DHCP。以后换网关地址需要重新配置并烧录所有节点。

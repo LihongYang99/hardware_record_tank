@@ -4,7 +4,7 @@
 
 - 固件标识：`shrimp-node05`；台架名称 pump-node-2；网页和控制页叫 **泵 2 / Pump 2**（设备编号 `pump2`）；数据库传感器编号 `PUMP2_ATLAS_PMP`（DECISION 049）。
 - 控制器：单独一块 ESP32-S3（esptool 2026-09-29：QFN56 rev v0.2，内置 8 MB PSRAM，16 MB flash），与项目 N16R8 编译配置一致。
-- MAC：`7C:4F:AD:B5:1C:D4`（已写入固件 `NODE_MAC`）。IP：`192.168.88.247`（2026-09-29 固件日志与 Jetson ARP 一致，DHCP，未固定）。
+- MAC：`7C:4F:AD:B5:1C:D4`（已写入固件 `NODE_MAC`）。IP：`192.168.88.247`（2026-09-29 固件日志与 Jetson ARP 一致；MikroTik DHCP 静态租约（用户 2026-09-30 设置））。
 - 泵：Atlas Scientific EZO-PMP（用户报告与泵 1 同型号），UART 直连，单独 12 V 电机电源。
 - **用途：第二个旁路泵**（用户 2026-09-29 暂定）。SPEC 只规定了一个旁路泵（NODE 04），尚未修改；见 DECISION 049。
 

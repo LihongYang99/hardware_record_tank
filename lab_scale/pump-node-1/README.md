@@ -4,7 +4,7 @@
 
 - 固件标识：`shrimp-node04`；台架名称 pump-node-1，对应 SPEC 的 NODE 04 — BYPASS（DECISION 048）。
 - 控制器：一块单独的 ESP32-S3（esptool 2026-09-27 读取：QFN56 rev v0.2，内置 8 MB PSRAM，16 MB flash），与项目 N16R8 编译配置一致。
-- MAC：`7C:4F:AD:B5:33:38`（esptool，已写入固件 `NODE_MAC`）。IP：`192.168.88.248`（2026-09-27 固件日志，DHCP，未固定）。
+- MAC：`7C:4F:AD:B5:33:38`（esptool，已写入固件 `NODE_MAC`）。IP：`192.168.88.248`（2026-09-27 固件日志；MikroTik DHCP 静态租约（用户 2026-09-30 设置））。
 - 串口（接 Jetson 时）：`/dev/serial/by-id/usb-1a86_USB_Single_Serial_5C93111989-if00`（板子的 COM/UART 口，CH343）。固件日志走原生 USB 口，这个口上只看得到烧录/启动信息。
 - 供电：ESP32 经 USB Type-C 直接接电源适配器（5 V，用户 2026-09-27 20:46 EDT 前改接，已离开 Jetson USB，与 Node 1/2 相同）；泵控制板由 ESP32 的 3V3 供电；电机由单独的 12 V 适配器供电。适配器型号、额定输出未记录。
 - 泵：Atlas Scientific EZO-PMP，UART 直连，单独 12 V 电机电源。
