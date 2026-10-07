@@ -60,6 +60,7 @@
 | [configure_node1.py](configure_node1.py) | 交互读取实验室 Wi-Fi 配置和本地 MQTT 凭据，生成对应 ESP 程序目录内的 `arduino_secrets.h`。 | 名字虽然是 `node1`，但**支持三个节点**：`python3 configure_node1.py --node 1`、`--node 2` 或 `--node 4`（pump-node-1）、`--node 5`（pump-node-2）。Node 2 / 4 / 5 可加 `--wifi-from-node1` 复用本机已有 Node 1 Wi-Fi 配置。当前生成的 MQTT 主机地址固定为 `192.168.88.249`；不会修改 ESP 上已烧录的程序。 |
 | [build_node1.py](build_node1.py) | 调用本地 Arduino CLI 编译对应 MQTT 固件；暂存源码和编译产物位于仓库根目录的 `.codex-build/`。 | 同样支持 `--node 1`、`--node 2`、`--node 4` 和 `--node 5`。例如 `python3 build_node1.py --node 2`。需要已配置的 Arduino CLI、ESP32 core 3.3.11 和相关库。`--check` 使用空凭据模板，只检查编译；该产物不能作为实际联网固件烧录。脚本没有上传功能。 |
 | [pump_ctl.py](pump_ctl.py) | 泵 1（pump-node-1）和泵 2（pump-node-2）的操作工具，`--device pump1|pump2` 选泵（默认泵 1）：`start <mL/min>`、`stop`、`dispense`、`calibrate`、`query`、`show`、`web-user add|remove|list`（控制页账号）。控制页 `/control` 的登录与执行也在这里的 `WebControl`。经 MQTT 账号 `pump-operator` 发一条带编号的命令，等泵节点的回复写进数据库后显示结果；每条命令记入 `operator_event` 表。 | 需要时在本目录运行，例如 `python3 pump_ctl.py show`。校准必须加 `--note`。步骤见 [pump-node-1 README](../pump-node-1/README.md#控制与校准jetson-终端)。节点离线时命令会被丢弃，不会稍后执行。 |
+| [export_raw.py](export_raw.py) | 把数据库里的原始日志行按"节点 / 传感器 / UTC 日期"导出到仓库根目录 [Raw_data/](../../Raw_data/README.md)，原文不改。只读数据库。 | `python3 export_raw.py`（补新日期）或 `--all`（全部重写）。服务运行时也可执行。CSV 不进 Git。 |
 | [camera_onvif.py](camera_onvif.py) | 向相机发送 ONVIF `GetStreamUri` 查询，取得 RTSP 地址并写入本地 `.env` 的 `CAMERA_RTSP_URI`。不修改相机设置。 | 相机网络可达后运行 `python3 camera_onvif.py`；默认 profile `001`，可用 `--profile` 指定。它只配置地址，不播放视频。`.env` 可能含账号密码，不得提交 GitHub；终端输出也应检查后再分享，目前脱敏没有覆盖 URI 中所有凭据格式。 |
 
 ESP 实际源程序不在本目录：分别在 [Node 1 MQTT 固件](../Node-1/script/DO_ORP_MQTT/)、[Node 2 MQTT 固件](../Node-2/script/Atlas_EC_pH_MQTT/) 和 [pump-node-1 固件](../pump-node-1/script/PMP_MQTT/)。上述配置／编译脚本只是帮助准备这些程序。
@@ -324,3 +325,20 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 | Node 6 | 44:B1:76:CE:D8:6C | 192.168.88.246 |
 
 对应关系 2026-09-30 由 Jetson ARP 核对；路由器上的静态租约是用户操作，Claude 没有登录路由器核对。相机 `192.168.1.88` 是相机内设的固定地址，不经 DHCP。以后换网关地址需要重新配置并烧录所有节点。
+
+## 2026-10-06：数据记录开关、12 小时保留、按传感器 / 每分钟导出（DECISION 051）
+
+用户提出：调试时产生的数据不要一直留着；要能单独导出每个传感器；CSV 里一分钟一条就够。
+
+- **记录开关**（控制页，需要登录；**按节点**：第一张卡片管 Node 1、Node 2、Node 6 三个传感器节点，泵 1、泵 2 各自的开关在自己的卡片上，用户 2026-10-06 要求）：开启时收到的数据长期保存；关闭时收到的数据 12 小时后自动删除（`server.py` 每 10 分钟清理一次，每批 5,000 行，不长时间锁库）。每行数据入库时记下该节点当时的开关状态，所以切换只影响之后收到的数据。默认开启。每次切换记入 `operator_event`（操作人、时间），控制页"最近操作"里能看到。之前已存的数据全部保留。
+- **导出**：监控页每个节点面板下，每个传感器有"每分钟 CSV"和"全部 CSV"两个按钮；顶部按钮导出全部传感器（每分钟）。接口 `/export.csv?sensor=<传感器编号>&every=60|0`。每分钟取该分钟（按 Jetson 接收时间）**第一条有效读数**，不做平均，带原始行和 `samples_in_minute`（这一分钟实际有几条）。
+- **节点仍然每 4 s 采集**：不用重新烧录，泵的状态判断也不变慢；只在导出时减到每分钟一条。
+- **顺带修了监控页变慢的问题**：最新值查询原来每次扫全部测量行，在 58 万行时要 7.9 s；改成每个参数按索引取最新一条，0.06 s。
+- 在真实数据库副本上实测：结构迁移 3.8 s（首次启动时自动完成）；导出全部传感器每分钟 39,247 行 / 53 MB / 21 s；全部 4 s 数据 588,325 行 / 797 MB / 42 s；单个传感器（浊度）每分钟 1.3 s。
+- 注意："内存"不会因数据多而崩：数据在磁盘上的 SQLite 文件里。会慢慢变满的是磁盘（2026-10-06：815 MB，剩余 68 GB），以及没有备份的风险。
+- 测试 22 项通过（新增：开关与清理、每分钟取样、单传感器导出、接口需要登录、两个进程同时打开并升级数据库）。需要重启 `run_mqtt.py` 和 `server.py` 生效。
+- **17:07 启动时的故障（已修）**：两个服务同时启动，`server.py` 先给 70 万行建新索引；接收器在读了表结构之后才想写，SQLite 在 WAL 模式下这种情况不排队、直接报 `database is locked`，接收器退出，`run_mqtt.py` 随之把 broker 也停掉，控制页显示"MQTT broker 不可用"，17:07 起没有存数据。修复：结构升级一开始就用 `BEGIN IMMEDIATE` 拿写锁，另一个进程按超时（120 s）排队；整个升级是一个事务。新增并发测试（旧结构 + 20 万行，三个进程同时打开）连跑 6 次通过。数据库升级已由 `server.py` 完成，只需重启 `run_mqtt.py`。
+
+## 2026-10-06：相机每分钟存一帧（Raw_data/Node-3-Camera）
+
+用户要求把"Node 3"（台架对相机的叫法；SPEC 的 NODE 03 是规划中的 H₂S 节点）的画面也存下来，每分钟一帧。`server.py` 新增一个线程：每到整分钟，如果画面 10 秒内更新过，就把当前 JPEG 存到仓库根目录 `Raw_data/Node-3-Camera/<UTC 日期>/<HHMMSS>Z.jpg`（文件名是 Jetson 解码时间），先写临时文件再改名。视频断开时跳过，不存旧画面。约 36 KB/张、51 MB/天。`--frames-dir ''` 可关闭。JPEG 不进 Git。测试 24 项通过。需要重启 `server.py` 生效。

@@ -9,6 +9,7 @@ const labels = {'DO_SEN0681/DO_mg_L':'Dissolved oxygen','DO_SEN0681/saturation_p
   'PUMP_ATLAS_PMP/motor_V':'Motor supply','PUMP_ATLAS_PMP/total_volume_mL':'Volume since power-up',
   'TURB_SEN0710/turbidity_NTU':'Turbidity','TURB_SEN0710/temperature_C':'Temp (turbidity probe)'};
 for (const k of Object.keys(labels)) if (k.startsWith('PUMP_ATLAS_PMP/')) labels['PUMP2'+k.slice(4)] = labels[k];
+const exportsFor=(node,sensors)=>{const box=make('div','exports');for(const sensor of sensors){box.append(make('span','',sensor));for(const [every,text] of [['60','↓ 1-min CSV'],['0','↓ all CSV']]){const a=make('a','button small',text);a.href='/export.csv?sensor='+encodeURIComponent(sensor)+'&every='+every;box.append(a);}}return box;};
 const cameraText = {LIVE:'Live video',CONNECTING:'Connecting',RETRYING:'Connection lost · retrying',NOT_CONFIGURED:'Not configured',NO_GSTREAMER:'Decoder unavailable'};
 const nodeName = node => ({'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'Pump 1','shrimp-node05':'Pump 2','shrimp-node06':'Node 6'})[node] || node;
 // pump_on is the pump controller's own report, not proof that water is flowing.
@@ -43,7 +44,7 @@ async function refresh(){
     const response=await fetch('/api/status');if(!response.ok)throw Error('status');const data=await response.json();
     $('serverDot').classList.add('connected');$('gateway').textContent='Jetson web service online';
     series=data.series;
-    if(!initialized){series.forEach((s,i)=>{const option=make('option','',label(s)+' · '+nodeName(s.node));option.value=i;$('series').append(option);});initialized=true;}
+    if(!initialized){series.forEach((s,i)=>{const option=make('option','',label(s)+' · '+nodeName(s.node));option.value=i;$('series').append(option);});const bySensor={};series.forEach(s=>(bySensor[s.node]=bySensor[s.node]||[]).includes(s.sensor)||bySensor[s.node].push(s.sensor));for(const [node,list] of Object.entries(bySensor)){const m=$('metrics-'+node);if(m)m.after(exportsFor(node,list));}initialized=true;}
     const waiting=[];
     for(const [node,config] of Object.entries(data.nodes)){
       const network=data.network[node]||{}, rows=data.latest.filter(r=>r.node_id===node), fresh=rows.filter(r=>!r.stale);
@@ -60,7 +61,7 @@ async function refresh(){
       const last=rows.reduce((a,r)=>r.received_utc>a?r.received_utc:a,'');
       $('detail-'+node).textContent=(config.ip||'IP not verified')+' · '+(network.identity_verified?'MAC verified':'MAC not verified')+' | Sample UTC: not synchronised'+(last?' | Last received: '+last:' | No records yet');
     }
-    $('notice').textContent=(waiting.length?waiting.join(' and ')+' not delivering live data right now.':'Live data from all nodes. Check each reading’s QC flag and whether it is stale.')+' Probes are not yet calibrated; node clocks are not synchronised, so times shown are when the gateway received the data.'+(!data.metadata_configured?' Tank / experiment IDs are not configured yet.':'');
+    $('notice').textContent=(waiting.length?waiting.join(' and ')+' not delivering live data right now.':'Live data from all nodes. Check each reading’s QC flag and whether it is stale.')+' Probes are not yet calibrated; node clocks are not synchronised, so times shown are when the gateway received the data.'+(!data.metadata_configured?' Tank / experiment IDs are not configured yet.':'')+((off=>off.length?' Long-term recording is off for '+off.join(', ')+': new data is kept for 12 hours only (switch it on in the control page).':'')(Object.keys(data.recording||{}).filter(n=>!data.recording[n]).map(nodeName)));
     $('count').textContent=data.stats.measurements;$('rawCount').textContent=data.stats.raw_records;$('issueCount').textContent=data.stats.issues;
     $('cameraStatus').textContent=cameraText[data.camera.code]||'Unknown';$('cameraStatus').className='badge'+(data.camera.live?' live':' warn');
     $('cameraEmpty').hidden=data.camera.live;$('cameraFrame').hidden=!data.camera.live;

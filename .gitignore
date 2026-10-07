@@ -7,3 +7,9 @@
 *.bin
 *.elf
 *.map
+
+# Raw data exports (large; regenerate with lab_scale/jetson_web/export_raw.py)
+Raw_data/**/*.csv
+Raw_data/**/*.tmp
+Raw_data/exported_days.txt
+Raw_data/**/*.jpg

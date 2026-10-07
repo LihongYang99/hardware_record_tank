@@ -93,6 +93,7 @@ lab_scale/
   jetson_web/              # Jetson 临时网关：MQTT broker、接收器、数据库、网页
   CHANGELOG.md             # 仓库整理记录
 jetson_setting/            # Jetson 设置与交接说明
+Raw_data/                  # 各节点 / 传感器的原始日志行，按天导出（CSV 不进 Git，见 Raw_data/README.md）
 tank_scale/README.md        # 未来实际部署
 ```
 

@@ -41,8 +41,18 @@ SENSORS = {
 }
 
 
-def utc():
-    return datetime.now(timezone.utc).isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+def utc(epoch=None):
+    moment = datetime.now(timezone.utc) if epoch is None else datetime.fromtimestamp(epoch, timezone.utc)
+    return moment.isoformat(timespec='milliseconds').replace('+00:00', 'Z')
+
+
+# Data recording switch per node (control page; setting key 'recording:<node>'). Rows received while a node's
+# switch is off are deleted once older than RECENT_ONLY_S; rows received while it is on are kept.
+# Without a stored setting a node records. The bare 'recording' key is the pre-per-node global switch.
+RECENT_ONLY_S = 12 * 3600
+KEEP = "COALESCE((SELECT value FROM setting WHERE key='recording:' || ?), (SELECT value FROM setting WHERE key='recording'), 1)"
+OPERATOR_EVENT_DDL = ('CREATE TABLE IF NOT EXISTS operator_event(id INTEGER PRIMARY KEY, sent_utc TEXT NOT NULL, node_id TEXT NOT NULL, '
+                      'cmd_id TEXT NOT NULL UNIQUE, operator TEXT NOT NULL, command TEXT NOT NULL, note TEXT, result_line TEXT)')
 
 
 def fields(line):
@@ -52,9 +62,14 @@ def fields(line):
 class Store:
     def __init__(self, path):
         self.path = str(path)
-        with self.connect() as db:
+        # The receiver and the web server open the same file at start. BEGIN IMMEDIATE takes the write lock
+        # before any read, so a second process waits (timeout) instead of failing with "database is locked"
+        # while the first one migrates; the whole schema change is one transaction.
+        db = sqlite3.connect(self.path, timeout=120, isolation_level=None)
+        try:
             db.executescript('''
                 PRAGMA journal_mode=WAL;
+                BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS raw_log (
                     id INTEGER PRIMARY KEY, received_utc TEXT NOT NULL,
                     received_epoch REAL NOT NULL, node_id TEXT NOT NULL,
@@ -73,7 +88,18 @@ class Store:
                 CREATE TABLE IF NOT EXISTS issue (
                     id INTEGER PRIMARY KEY, received_utc TEXT NOT NULL, node_id TEXT NOT NULL,
                     sensor_id TEXT, kind TEXT NOT NULL, details TEXT NOT NULL);
+                CREATE TABLE IF NOT EXISTS setting (key TEXT PRIMARY KEY, value INTEGER NOT NULL);
             ''')
+            db.execute(OPERATOR_EVENT_DDL)
+            for table in ('raw_log', 'issue'):
+                if 'keep' not in [row[1] for row in db.execute(f'PRAGMA table_info({table})')]:
+                    # Rows stored before the switch existed were all recorded on purpose: keep them.
+                    db.execute(f'ALTER TABLE {table} ADD COLUMN keep INTEGER NOT NULL DEFAULT 1')
+            db.execute('CREATE INDEX IF NOT EXISTS raw_log_purge ON raw_log(keep, received_epoch)')
+            db.execute('CREATE INDEX IF NOT EXISTS measurement_raw ON measurement(raw_id)')
+            db.execute('COMMIT')
+        finally:
+            db.close()  # an exception before COMMIT rolls the whole migration back
 
     @contextmanager
     def connect(self):
@@ -100,14 +126,15 @@ class Store:
         now, stamp = time.time(), utc()
         count = 0
         with self.connect() as db:
-            raw_id = db.execute('INSERT INTO raw_log(received_utc,received_epoch,node_id,transport,line) VALUES(?,?,?,?,?)',
-                                (stamp, now, node, transport, line)).lastrowid
+            raw_id = db.execute(f'INSERT INTO raw_log(received_utc,received_epoch,node_id,transport,line,keep) VALUES(?,?,?,?,?,{KEEP})',
+                                (stamp, now, node, transport, line, node)).lastrowid
+            issue = lambda kind, details: db.execute(
+                f'INSERT INTO issue(received_utc,node_id,sensor_id,kind,details,keep) VALUES(?,?,?,?,?,{KEEP})', (stamp, node, sensor, kind, details, node))
             # Health, RX and TX lines remain raw records; only completed measurement reports are parsed.
             if sensor not in SENSORS or 'QC' not in f or 'COMM' not in f:
                 return 0
             if not f.get('boot_id') or not f.get('seq', '').isdigit():
-                db.execute('INSERT INTO issue(received_utc,node_id,sensor_id,kind,details) VALUES(?,?,?,?,?)',
-                           (stamp, node, sensor, 'UNPARSED_MEASUREMENT', str(raw_id)))
+                issue('UNPARSED_MEASUREMENT', str(raw_id))
                 return 0
             seq = int(f['seq'])
             if seq > 4294967295:
@@ -115,11 +142,9 @@ class Store:
             previous = db.execute('SELECT MAX(sequence_number) AS seq FROM measurement WHERE node_id=? AND sensor_id=? AND boot_id=?',
                                   (node, sensor, f['boot_id'])).fetchone()['seq']
             if previous is not None and seq > previous + 1:
-                db.execute('INSERT INTO issue(received_utc,node_id,sensor_id,kind,details) VALUES(?,?,?,?,?)',
-                           (stamp, node, sensor, 'SEQUENCE_GAP', json.dumps({'after': previous, 'before': seq})))
+                issue('SEQUENCE_GAP', json.dumps({'after': previous, 'before': seq}))
             elif previous is not None and seq <= previous:
-                db.execute('INSERT INTO issue(received_utc,node_id,sensor_id,kind,details) VALUES(?,?,?,?,?)',
-                           (stamp, node, sensor, 'DUPLICATE_OR_OUT_OF_ORDER', json.dumps({'previous': previous, 'received': seq})))
+                issue('DUPLICATE_OR_OUT_OF_ORDER', json.dumps({'previous': previous, 'received': seq}))
             f['delivery_order'] = 'OUT_OF_ORDER' if previous is not None and seq < previous else 'IN_ORDER'
             for parameter, _, unit in SENSORS[sensor][2]:
                 value, qc = None, f['QC']
@@ -145,13 +170,67 @@ class Store:
 
     def latest(self):
         with self.connect() as db:
-            rows = db.execute('''SELECT * FROM measurement WHERE id IN
-                (SELECT MAX(id) FROM measurement WHERE json_extract(metadata, '$.delivery_order') != 'OUT_OF_ORDER' GROUP BY sensor_id,parameter)''').fetchall()
-            latest = [dict(row) for row in rows]
-            stats = dict(db.execute('SELECT COUNT(*) AS measurements, MAX(received_utc) AS last_received_utc FROM measurement').fetchone())
+            # One indexed lookup per known series (measurement_history), so this stays fast as history grows.
+            rows = [db.execute('''SELECT * FROM measurement WHERE sensor_id=? AND parameter=?
+                AND json_extract(metadata, '$.delivery_order') != 'OUT_OF_ORDER' ORDER BY id DESC LIMIT 1''', (sensor, p[0])).fetchone()
+                    for sensor, data in SENSORS.items() for p in data[2]]
+            latest = [dict(row) for row in rows if row]
+            stats = {'measurements': db.execute('SELECT COUNT(*) FROM measurement').fetchone()[0],
+                     'last_received_utc': (db.execute('SELECT received_utc FROM measurement ORDER BY id DESC LIMIT 1').fetchone() or [None])[0]}
             stats['raw_records'] = db.execute('SELECT COUNT(*) FROM raw_log').fetchone()[0]
             stats['issues'] = db.execute('SELECT COUNT(*) FROM issue').fetchone()[0]
         return latest, stats
+
+    def recording(self):
+        """{node: True if rows received from it now are kept}."""
+        with self.connect() as db:
+            return {node: bool(db.execute(f'SELECT {KEEP}', (node,)).fetchone()[0]) for node in NODES}
+
+    def set_recording(self, on, operator, nodes):
+        if not nodes or any(node not in NODES for node in nodes):
+            raise ValueError('Unknown node')
+        with self.connect() as db:
+            for node in nodes:
+                db.execute('INSERT INTO setting(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', ('recording:' + node, int(on)))
+                db.execute('INSERT INTO operator_event(sent_utc,node_id,cmd_id,operator,command,note,result_line) VALUES(?,?,?,?,?,?,?)',
+                           (utc(), node, f'{time.time_ns()}-{node}', operator, 'RECORDING_ON' if on else 'RECORDING_OFF', 'control page', 'result=OK'))
+
+    def purge(self, max_age=RECENT_ONLY_S, batch=5000):
+        """Delete rows received while recording was off, once older than max_age. Kept rows are never touched.
+        Short batches keep each write lock brief so the receiver is not blocked."""
+        cutoff, removed = time.time() - max_age, 0
+        while True:
+            with self.connect() as db:
+                ids = [row[0] for row in db.execute('SELECT id FROM raw_log WHERE keep=0 AND received_epoch<? LIMIT ?', (cutoff, batch))]
+                if not ids:
+                    db.execute('DELETE FROM issue WHERE keep=0 AND received_utc<?', (utc(cutoff),))
+                    return removed
+                marks = ','.join('?' * len(ids))
+                db.execute(f'DELETE FROM measurement WHERE raw_id IN ({marks})', ids)
+                db.execute(f'DELETE FROM raw_log WHERE id IN ({marks})', ids)
+                removed += len(ids)
+
+    def export(self, output, sensor='', every=60):
+        """CSV of measurements with their raw lines; every=60 keeps one real sample per node/sensor/parameter per
+        gateway-received minute (the first valid one, else the first), never an average, plus samples_in_minute."""
+        if (sensor and sensor not in SENSORS) or every not in (0, 60):
+            raise ValueError('Unknown export')
+        where, args = ('WHERE m.sensor_id=?', (sensor,)) if sensor else ('', ())
+        sql = f'SELECT m.*, r.line AS raw_line FROM measurement m JOIN raw_log r ON r.id=m.raw_id {where} ORDER BY m.id'
+        if every:
+            sql = f'''SELECT * FROM (SELECT m.*, r.line AS raw_line, COUNT(*) OVER w AS samples_in_minute,
+                      ROW_NUMBER() OVER (w ORDER BY m.value IS NULL, m.id) AS pick
+                      FROM measurement m JOIN raw_log r ON r.id=m.raw_id {where}
+                      WINDOW w AS (PARTITION BY m.node_id, m.sensor_id, m.parameter, CAST(m.received_epoch / 60 AS INTEGER)))
+                      WHERE pick=1 ORDER BY id'''
+        # One transaction gives a consistent export while acquisition continues.
+        with self.connect() as db:
+            cursor = db.execute(sql, args)
+            columns = [i for i, c in enumerate(cursor.description) if c[0] != 'pick']
+            writer = csv.writer(output)
+            writer.writerow([cursor.description[i][0] for i in columns])
+            for row in cursor:
+                writer.writerow(["'" + x if isinstance(x, str) and x.startswith(('=', '+', '-', '@')) else x for x in (row[i] for i in columns)])
 
     def history(self, sensor, parameter, limit=300):
         if sensor not in SENSORS or parameter not in [p[0] for p in SENSORS[sensor][2]]:
@@ -168,6 +247,20 @@ class Camera:
         self.last_frame = 0
         self.state, self.code = '视频待验证', 'NOT_CONFIGURED'  # code: language-neutral for other pages
         self.configured = bool(os.getenv('CAMERA_RTSP_URI'))
+
+    def save_frame(self, folder):
+        """Write the current frame, only if fresh (<10 s), to folder/<UTC date>/<HHMMSS>Z.jpg named by the Jetson
+        time the frame was decoded (the camera's own clock is ~6 months off). Returns the path or None."""
+        with self.lock:
+            frame, taken = self.frame, self.last_frame
+        if not frame or time.time() - taken >= 10:
+            return None
+        stamp = datetime.fromtimestamp(taken, timezone.utc)
+        path = Path(folder) / stamp.strftime('%Y-%m-%d') / stamp.strftime('%H%M%SZ.jpg')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.with_suffix('.tmp').write_bytes(frame)
+        os.replace(path.with_suffix('.tmp'), path)  # never leave a half-written image
+        return path
 
     def snapshot(self):
         with self.lock:
@@ -323,6 +416,15 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
             user = pump.user(self.session_token())
             if not user:
                 return self.send({'error': 'LOGIN_REQUIRED'}, status=401)
+            if self.path == '/api/recording':
+                nodes = body.get('nodes')
+                try:
+                    if not isinstance(body.get('on'), bool) or not isinstance(nodes, list) or not all(isinstance(n, str) for n in nodes):
+                        raise ValueError('Invalid request')
+                    store.set_recording(body['on'], 'web-' + user, nodes)
+                except ValueError:
+                    return self.send({'error': 'Invalid request'}, status=400)
+                return self.send({'recording': store.recording()})
             device, action = body.get('device'), body.get('action')
             try:
                 if not isinstance(device, str) or pump.kind(device) != 'pump':
@@ -343,7 +445,7 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
             return self.send(dict(result, device=device, command=command), status=status)
 
         def do_POST(self):
-            if not ingest_only and self.path in ('/api/login', '/api/logout', '/api/control'):
+            if not ingest_only and self.path in ('/api/login', '/api/logout', '/api/control', '/api/recording'):
                 return self.control_post()
             if not ingest_only or self.path != '/ingest':
                 return self.send({'error': 'Read-only dashboard'}, status=405)
@@ -377,6 +479,7 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
                     return self.send({'gateway_utc': utc(), 'latest': latest, 'stats': stats,
                                       'network': network.snapshot(), 'nodes': NODES, 'camera': camera.snapshot(),
                                       'metadata_configured': bool(os.getenv('TANK_ID') and os.getenv('EXPERIMENT_ID')),
+                                      'recording': store.recording(),
                                       'series': [{'sensor': sensor, 'parameter': p, 'label': label, 'unit': unit, 'node': data[0]}
                                                  for sensor, data in SENSORS.items() for p, label, unit in data[2]]})
                 if parsed.path == '/api/session':
@@ -396,20 +499,17 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
                         return self.send(frame, 'image/jpeg')
                     return self.send({'error': 'Video unavailable'}, status=503)
                 if parsed.path == '/export.csv':
-                    # A transaction provides a consistent export while acquisition continues.
-                    # Spool rows to disk to avoid loading the full history in RAM.
-                    import tempfile
+                    # ?sensor=<id> for one sensor; ?every=0 for every 4 s sample (default: one per minute).
+                    sensor, every = query.get('sensor', [''])[0], query.get('every', ['60'])[0]
+                    if every not in ('0', '60'):
+                        raise ValueError('Unknown export')
+                    import tempfile  # spool to disk so a large history never sits in RAM
                     with tempfile.TemporaryFile(mode='w+', encoding='utf-8', newline='') as output:
-                        with store.connect() as db:
-                            cursor = db.execute('SELECT m.*, r.line AS raw_line FROM measurement m JOIN raw_log r ON r.id=m.raw_id ORDER BY m.id')
-                            writer = csv.writer(output)
-                            writer.writerow([column[0] for column in cursor.description])
-                            for row in cursor:
-                                writer.writerow(["'" + x if isinstance(x, str) and x.startswith(('=', '+', '-', '@')) else x for x in row])
+                        store.export(output, sensor, int(every))
                         output.seek(0)
                         self.send_response(200)
                         self.send_header('Content-Type', 'text/csv; charset=utf-8')
-                        self.send_header('Content-Disposition', 'attachment; filename="measurements.csv"')
+                        self.send_header('Content-Disposition', f'attachment; filename="{sensor or "all"}_{"1min" if every == "60" else "all"}.csv"')
                         self.end_headers()
                         while chunk := output.read(65536):
                             self.wfile.write(chunk.encode())
@@ -441,6 +541,8 @@ def main():
     parser.add_argument('--ingest-port', type=int, default=8766)
     parser.add_argument('--interface', default='enP8p1s0')
     parser.add_argument('--db', default=str(ROOT / 'data' / 'measurements.sqlite3'))
+    parser.add_argument('--frames-dir', default=str(ROOT.parents[1] / 'Raw_data' / 'Node-3-Camera'),
+                        help='Where one camera frame per minute is kept; empty string disables saving')
     parser.add_argument('--pump-control', action='store_true',
                         help='Enable the login-protected device control page /control (production only; commands reach real devices)')
     args = parser.parse_args()
@@ -454,7 +556,23 @@ def main():
     public = ThreadingHTTPServer((args.bind, args.port), handler_for(store, camera, network, pump=pump))
     local = ThreadingHTTPServer(('127.0.0.1', args.ingest_port), handler_for(store, camera, network, True))
     (Path(args.db).parent / 'server.pid').write_text(str(os.getpid()) + '\n')
-    for target in (local.serve_forever, camera.run, network.run):
+    def purge_forever():
+        while True:
+            try:
+                removed = store.purge()
+                if removed:
+                    print(f'{utc()} purged {removed} raw records received while recording was off', flush=True)
+            except sqlite3.Error as error:
+                print(f'{utc()} purge failed: {error}', flush=True)
+            time.sleep(600)
+    def frames_forever():  # one still frame per minute while the video is live
+        while True:
+            time.sleep(60 - time.time() % 60)
+            try:
+                camera.save_frame(args.frames_dir)
+            except OSError as error:
+                print(f'{utc()} frame save failed: {error}', flush=True)
+    for target in (local.serve_forever, camera.run, network.run, purge_forever) + ((frames_forever,) if args.frames_dir else ()):
         threading.Thread(target=target, daemon=True).start()
     print(f'Dashboard http://{args.bind}:{args.port} | local ingestion 127.0.0.1:{args.ingest_port}', flush=True)
     try:

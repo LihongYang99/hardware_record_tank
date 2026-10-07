@@ -27,7 +27,7 @@ RUNTIME = ROOT.parents[1] / '.codex-build' / 'runtime'
 if importlib.util.find_spec('paho') is None:
     sys.path.insert(0, str(RUNTIME / 'usr/lib/python3/dist-packages'))
 import paho.mqtt.client as mqtt
-from server import fields, utc
+from server import OPERATOR_EVENT_DDL, fields, utc
 
 USERS_FILE = ROOT / 'data' / 'pump_web_users.json'
 # Devices on the control page. A new controllable device needs its own node firmware whitelist, an ACL line
@@ -138,8 +138,7 @@ def execute(db, conn, command, operator, note, timeout, node, topic):
     cmd_id = str(time.time_ns())
     before = db.execute('SELECT COALESCE(MAX(id), 0) FROM raw_log').fetchone()[0]
     with db:
-        db.execute('CREATE TABLE IF NOT EXISTS operator_event(id INTEGER PRIMARY KEY, sent_utc TEXT NOT NULL, node_id TEXT NOT NULL, '
-                   'cmd_id TEXT NOT NULL UNIQUE, operator TEXT NOT NULL, command TEXT NOT NULL, note TEXT, result_line TEXT)')
+        db.execute(OPERATOR_EVENT_DDL)
         db.execute('INSERT INTO operator_event(sent_utc,node_id,cmd_id,operator,command,note) VALUES(?,?,?,?,?,?)',
                    (utc(), node, cmd_id, operator, command, note))
     try:

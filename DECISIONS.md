@@ -1390,6 +1390,20 @@ Decision:
 4. Turbidity is published as NTU only; no eTSS until paired gravimetric samples establish a tank-specific model.
 5. Risks: wiring of power and A/B not individually verified; converter model not recorded; the temperature channel's range/accuracy are not documented, so it is not range-checked.
 
+# DECISION 051 — Data Recording Switch, 12-Hour Retention and Per-Minute Export (lab gateway)
+
+Date accepted: 2026-10-06, by the user (direct instruction: a control-page button decides whether data is recorded, otherwise keep only the last 12 hours; export each sensor separately; one record per minute in the final CSV).
+
+Status: LOCKED for the lab gateway (`lab_scale/jetson_web`). Not yet a formal Raspberry Pi retention policy.
+
+Decision:
+
+1. A "data recording" switch per node on the login-protected control page (`POST /api/recording {on, nodes}`; setting key `recording:<node>`): one card switches the sensor nodes, and each pump has its own switch on its card (user, 2026-10-06: "每个pump也要有单独的record"). Each `raw_log` and `issue` row stores its node's switch state when it is received (`keep`). Rows received while the switch is off are deleted, with their `measurement` rows, once older than 12 hours (checked every 10 minutes in short batches). Rows received while it is on are never deleted by this mechanism. With no stored setting the switch is on. Every change is logged in `operator_event` (one row per node, operator, time).
+2. Rows stored before this decision were all kept (`keep=1`); nothing existing was deleted.
+3. Acquisition stays at 4 s on the nodes (no reflash; the pump state check stays fast). The CSV export defaults to one real sample per node/sensor/parameter per gateway-received minute: the first valid sample in that minute, otherwise the first sample, with its raw line and a `samples_in_minute` count. It is never an average. Minutes come from the Jetson receive clock (sample UTC is still unsynced). `every=0` exports every sample. `sensor=<id>` exports one sensor.
+4. Data integrity: deleting debug data is the user's explicit retention choice, recorded here and in `operator_event`. Kept data still preserves raw lines, sequence numbers and QC.
+5. Risk: when the switch is off, a whole debugging session older than 12 hours is gone and cannot be recovered. There is still no backup of kept data.
+
 ---
 
 # Current Critical Open Decisions

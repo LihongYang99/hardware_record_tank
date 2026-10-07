@@ -80,3 +80,17 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 用户：Node 6 只接一个 DFRobot 浊度传感器，接线同 Node-1。记录为 DECISION 050（型号按 SEN0710，待核对标签；盐水长期浸泡未确认）。
 - 新目录 `lab_scale/Node-6/`（README、HARDWARE、WIRING、COMMUNICATION、PROGRESS、`script/TURB_MQTT/`、`tests/`）；`Protocol.h`/`BenchChannel.h` 取自 Node-1、`Telemetry.h` 取自 Node-2，均逐字节相同。
 - 网关加 node06、传感器 `TURB_SEN0710`、中英文监控页面板；测试 19 项通过；broker 账号已生成；尚未读 MAC、未烧录。
+
+# 2026-10-06 — 数据记录开关与导出（DECISION 051）
+
+- 控制页加"数据记录"开关：关闭时收到的数据 12 小时后自动删除，开启时长期保存；已有数据全部保留。
+- 监控页每个传感器可单独导出 CSV；默认每分钟一条（真实样本，不平均），可选全部 4 s 数据。
+- 最新值查询改为按索引取，监控页刷新从 7.9 s 降到 0.06 s（58 万行时）。测试 21 项通过。
+
+# 2026-10-06 — Raw_data 原始数据文件夹
+
+- 用户新建仓库根目录 `Raw_data/`，要求按节点分文件夹（如 Node-1-ORP-DO、Node-2-pH-Conductivity），每个传感器再分子文件夹存原始数据。
+- 新增 `jetson_web/export_raw.py`：按"节点 / 传感器 / UTC 日期"导出原始日志行（原文不改），节点自身日志进 `node_log/`；已完成的日期记入 `exported_days.txt`。
+- 首次导出 55 个文件、700,695 行、231 MB，与数据库逐行核对无遗漏、无重复。CSV 加入 `.gitignore`，只提交文件夹结构（`.gitkeep`）和 README。
+- 每个泵也有独立的数据记录开关（DECISION 051 更新）。测试 23 项通过。
+- 同日：相机（台架称 Node 3）每分钟存一帧 JPEG 到 `Raw_data/Node-3-Camera/<UTC 日期>/`，约 51 MB/天，JPEG 不进 Git；测试 24 项通过。

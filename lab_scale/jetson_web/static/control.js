@@ -25,7 +25,12 @@ const T = EN ? {
   loggedIn: u => 'Logged in. Every action is logged with the operator (web-' + u + ') and the device reply.', pleaseLogin: 'Please log in. Monitoring data needs no login; see the monitoring page.',
   loggingIn: 'Logging in…', loginFailed: 'Login failed', gateway: 'Gateway time ', unreachable: 'Cannot reach the web service.',
   describe: {start: r => 'Start ' + r + ' mL/min', stop: 'Stop', dispenseOver: (ml, min) => 'Dispense ' + ml + ' mL over ' + min + ' min', dispense: ml => 'Dispense ' + ml + ' mL',
-    calClear: 'Clear calibration', cal: ml => 'Calibrate (measured ' + ml + ' mL)', query: c => 'Query ' + c}
+    calClear: 'Clear calibration', cal: ml => 'Calibrate (measured ' + ml + ' mL)', query: c => 'Query ' + c,
+    RECORDING_ON: 'Start long-term recording', RECORDING_OFF: 'Stop long-term recording (keep 12 h)'},
+  rec: {cardEyebrow: 'GATEWAY · DATA RECORDING', eyebrow: 'Data recording', sensors: 'Sensor nodes', on: 'Recording: kept long-term', off: 'Not recording: kept 12 h only',
+    note: 'Each node has its own switch; each pump has its own on its card. Data received while recording is on is kept permanently; while it is off it is deleted automatically after 12 hours (useful while debugging). Switching only affects data received from now on; nothing already kept is deleted.',
+    start: 'Start long-term recording', stop: 'Stop (keep only 12 h)', confirmOn: 'Keep all data received from now on?',
+    confirmOff: 'Data received from now on will be deleted after 12 hours. Continue?', done: 'Saved.'}
 } : {
   result: {OK:'设备已接受',ER:'设备拒绝了这条命令',PUMP_NOT_READY:'设备还没初始化好，稍后再试',ANOTHER_COMMAND_PENDING:'上一条命令还没完成',
     DUPLICATE_ID:'重复命令，已忽略',NO_REPLY:'节点没有回复（可能离线）；先确认状态再重试',BUSY:'另一条网页命令正在执行',
@@ -47,7 +52,12 @@ const T = EN ? {
   loggedIn: u => '已登录。每条操作都会记录操作人（web-' + u + '）和设备的回复。', pleaseLogin: '请先登录。监控数据不需要登录，在监控页查看。',
   loggingIn: '正在登录…', loginFailed: '登录失败', gateway: '网关时间 ', unreachable: '网页服务连接失败。',
   describe: {start: r => '启动 ' + r + ' mL/min', stop: '停止', dispenseOver: (ml, min) => min + ' 分钟内输送 ' + ml + ' mL', dispense: ml => '输送 ' + ml + ' mL',
-    calClear: '清除校准', cal: ml => '校准（实测 ' + ml + ' mL）', query: c => '查询 ' + c}
+    calClear: '清除校准', cal: ml => '校准（实测 ' + ml + ' mL）', query: c => '查询 ' + c,
+    RECORDING_ON: '开始长期记录', RECORDING_OFF: '停止长期记录（只留 12 小时）'},
+  rec: {cardEyebrow: '网关 · 数据记录', eyebrow: '数据记录', sensors: '传感器节点', on: '记录中：长期保存', off: '未记录：只留 12 小时',
+    note: '每个节点单独记录；每台泵的开关在它自己的卡片上。开启时收到的数据永久保存；关闭时收到的数据 12 小时后自动删除（适合调试）。切换只影响之后收到的数据，已经保存的不会被删。',
+    start: '开始长期记录', stop: '停止记录（只留 12 小时）', confirmOn: '从现在起收到的数据全部长期保存？',
+    confirmOff: '从现在起收到的数据会在 12 小时后自动删除，继续？', done: '已保存。'}
 };
 const nameOf = d => EN ? d.name_en || d.name : d.name;
 let user = null, devices = [], busy = false, cards = [];
@@ -66,7 +76,7 @@ function describe(command) {
   if ((m = /^D,([\d.]+)$/.exec(command))) return D.dispense(Number(m[1]));
   if (command === 'Cal,clear') return D.calClear;
   if ((m = /^Cal,([\d.]+)$/.exec(command))) return D.cal(Number(m[1]));
-  return D.query(command);
+  return D[command] || D.query(command);
 }
 function controls() { for (const b of document.querySelectorAll('.device-card button')) b.disabled = busy || !user; }
 function metric(label) {
@@ -88,7 +98,8 @@ function pumpCard(device, index) {
   const hint = make('p','muted', device.max_rate_mL_min ? T.maxRate(device.max_rate_mL_min) : T.maxUnknown);
   const message = make('p','pump-message'); message.setAttribute('role','status');
   form.append(fieldsBox, buttons, hint, message);
-  card.append(head, metrics, make('p','muted',T.flowNote), form);
+  const toggle = recordSwitch(() => [device.node_id]);
+  card.append(head, metrics, make('p','muted',T.flowNote), form, toggle.box);
   async function send(action) {
     if (busy || !user) return;
     const value = Number(rate.value), max = Number(rate.max) || 105;
@@ -117,8 +128,41 @@ function pumpCard(device, index) {
     volt.set(motor && motor.value !== null ? Number(motor.value).toFixed(2) : '—', 'V', T.motorNote);
     badge.className = 'badge' + (on && !stale && on.value && on.qc_flag === 'UNVALIDATED' ? ' live' : ' warn');
     badge.textContent = !on || stale ? T.noData : on.value ? T.runningReport : T.stopped;
+    toggle.update();
   }};
 }
+// Data recording switch for a set of nodes: rows received while it is off are deleted after 12 h (server.py RECENT_ONLY_S).
+let recordingMap = {}, nodeInfo = {};
+function recordSwitch(getNodes) {
+  const box = make('div','pump-control'), row = make('div','pump-buttons'), badge = make('span','badge','…'), button = make('button',''), message = make('p','pump-message');
+  button.type = 'button'; message.setAttribute('role','status');
+  row.append(badge, button); box.append(make('p','eyebrow',T.rec.eyebrow), row, message);
+  let current = null;
+  button.addEventListener('click', async () => {
+    if (busy || !user || current === null || !confirm(current ? T.rec.confirmOff : T.rec.confirmOn)) return;
+    busy = true; controls();
+    try {
+      const {status, data} = await api('/api/recording', {on: !current, nodes: getNodes()});
+      if (status === 401) { await checkSession(); return; }
+      message.textContent = status === 200 ? T.rec.done : T.result[data.error] || data.error || T.failed;
+    } catch (error) { message.textContent = T.failed; }
+    finally { busy = false; controls(); refresh().catch(() => {}); }
+  });
+  return {box, update() {
+    const nodes = getNodes().filter(n => n in recordingMap);
+    current = nodes.length ? nodes.every(n => recordingMap[n]) : null;
+    badge.className = 'badge' + (current ? ' live' : ' warn'); badge.textContent = current === null ? '…' : current ? T.rec.on : T.rec.off;
+    button.textContent = current ? T.rec.stop : T.rec.start; button.className = current ? 'stop' : '';
+  }};
+}
+const pumpNodes = () => devices.filter(d => d.kind === 'pump').map(d => d.node_id);
+const sensorNodes = () => Object.keys(recordingMap).filter(n => !pumpNodes().includes(n));
+function sensorRecordingCard() {
+  const card = make('article','panel device-card'), names = make('p','muted'), toggle = recordSwitch(sensorNodes);
+  card.append(make('p','eyebrow',T.rec.cardEyebrow), make('h2','',T.rec.sensors), names, make('p','muted',T.rec.note), toggle.box);
+  return {card, update() { names.textContent = sensorNodes().map(n => (nodeInfo[n] || {}).name || n).join(' · '); toggle.update(); }};
+}
+const recorder = sensorRecordingCard();
 const builders = {pump: pumpCard};
 async function checkSession() {
   const {data} = await api('/api/session');
@@ -132,7 +176,7 @@ async function checkSession() {
   const list = Array.isArray(data.devices) ? data.devices : [];
   if (JSON.stringify(list.map(d => d.id)) !== JSON.stringify(devices.map(d => d.id))) {
     devices = list; cards = devices.map((d, i) => (builders[d.kind] || (() => null))(d, i)).filter(Boolean);
-    $('devices').replaceChildren(...cards.map(c => c.card));
+    $('devices').replaceChildren(recorder.card, ...cards.map(c => c.card));
     $('deviceCount').textContent = T.count(cards.length);
   }
   controls();
@@ -143,11 +187,14 @@ async function refresh() {
   const [status, events] = await Promise.all([api('/api/status'), api('/api/control/events')]);
   if (events.status === 401) return checkSession();
   const rows = status.data.latest || [];
+  if (status.data.recording && typeof status.data.recording === 'object') { recordingMap = status.data.recording; nodeInfo = status.data.nodes || {}; }
   for (const c of cards) c.update(rows);
+  recorder.update();
   const byId = Object.fromEntries(devices.map(d => [d.id, d])), body = $('events'); body.replaceChildren();
   for (const e of (Array.isArray(events.data) ? events.data : [])) {
-    const tr = make('tr'), device = byId[e.device_id];
-    for (const text of [e.sent_utc.replace('T',' ').slice(0,19), device ? nameOf(device) : e.node_id, e.operator, describe(e.command),
+    const tr = make('tr'), device = byId[e.device_id] || devices.find(d => d.node_id === e.node_id);
+    const node = nodeInfo[e.node_id];
+    for (const text of [e.sent_utc.replace('T',' ').slice(0,19), device ? nameOf(device) : node ? node.name : e.node_id, e.operator, describe(e.command),
       T.result[e.result] || e.result, e.reply && e.reply !== 'NONE' ? e.reply : '—']) tr.append(make('td','',text));
     body.append(tr);
   }

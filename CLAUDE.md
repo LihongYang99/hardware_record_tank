@@ -37,8 +37,11 @@ Documentation is mostly Chinese (with `docs/phase1/` in English + `zh-CN/`). `SP
 - `run_mqtt.py` supervises broker + `mqtt_receiver.py` together (SIGTERM/Ctrl+C stops both).
 - `mqtt_receiver.py`: node identity comes from the topic (enforced by broker ACL). `accept_record` validates framing, duplicate keys, transport identity and node/boot consistency. Rejects are stored verbatim in `mqtt_rejected` with no ACK. Accepted records go through `Store.ingest`, and the ACK is published only after the SQLite commit.
 - `server.py`: `Store` owns the schema (`raw_log`, `measurement` with UNIQUE(node, sensor, boot, seq, parameter), `issue` for sequence gaps/duplicates/out-of-order). It uses WAL mode. `NODES`/`SENSORS` dicts define allowed node↔sensor mappings and parameters/units. It serves a read-only HTTP UI/API (default :8080; Chinese `static/index.html`+`app.js`, English `/en` → `en.html`+`app_en.js`, shared API) plus a loopback-only `POST /ingest` port (:8766). It also runs a `Camera` GStreamer RTSP→JPEG preview thread (explicit H.264 pipeline; `uridecodebin` breaks on Jetson NVMM) and a `Network` interface monitor.
+- Retention (DECISION 051): `setting` table key `recording:<node>` (per node, default on; bare `recording` is a legacy global fallback), toggled by `POST /api/recording {on, nodes}` on the control page (sensor-node card + one switch per pump card) and logged in `operator_event`; `raw_log`/`issue` rows carry `keep` (the switch state at receive time) and a `server.py` thread deletes `keep=0` rows older than 12 h (`RECENT_ONLY_S`) with their measurements. `/export.csv?sensor=<id>&every=60|0` (`Store.export`): default one real sample per node/sensor/parameter per received minute (first valid, never averaged, with `samples_in_minute`). Nodes still sample every 4 s. `Store.latest` uses one indexed lookup per series (a GROUP BY over all rows took 7.9 s at 588k rows).
 - STALE = no report within 15 s (including `transport_age_ms`). Error QC clears the current value instead of keeping the last good value.
 - `.env` (from `.env.example`, git-ignored): `TANK_ID`, `EXPERIMENT_ID`, `SENSOR_LOCATION`, `CAMERA_RTSP_URI`. Leave the IDs empty rather than invent them. `camera_onvif.py` fills the RTSP URI via ONVIF, and the API never returns it.
+- `server.py` also saves one fresh camera frame per minute to `Raw_data/Node-3-Camera/<UTC date>/<HHMMSS>Z.jpg` (`Camera.save_frame`, `--frames-dir ''` disables; "Node 3" is the bench name for the camera, not SPEC NODE 03 = H2S).
+- `export_raw.py` (read-only) writes raw lines verbatim to repo-root `Raw_data/<node folder>/<sensor id or node_log>/<UTC date>.csv` (`FOLDERS` must cover every node); finished days are listed in `Raw_data/exported_days.txt`; the CSVs are git-ignored.
 - `server.py` `NODES` entries may have `ip`/`mac` = `None` until verified; the network monitor skips them.
 - Adding a node or sensor means updating `NODES`/`SENSORS` in `server.py`, `MQTT_NODES` in `mqtt_receiver.py`, `NODES` in `prepare_mqtt.py`, the `SKETCHES` map in `build_node1.py`/`configure_node1.py`, and both frontends' labels. Then restart `run_mqtt.py` as well as `server.py`: the receiver imports `server.py`'s tables at start, so new parameters are otherwise kept only in `raw_log` (2026-09-27: `target_mL_min` rows were missing until the receiver was restarted). New broker accounts need `kill -HUP` on the broker or a `run_mqtt.py` restart.
 
@@ -54,7 +57,7 @@ Documentation is mostly Chinese (with `docs/phase1/` in English + `zh-CN/`). `SP
 Run all commands from the repo root unless noted.
 
 ```bash
-# Gateway tests (19 tests; use temp DBs, never touch data/). One includes a real-broker test needing .codex-build/runtime.
+# Gateway tests (24 tests; use temp DBs, never touch data/). One includes a real-broker test needing .codex-build/runtime.
 python3 -m unittest discover -s lab_scale/jetson_web -v
 # Single test (tests import siblings, so cd into the dir)
 cd lab_scale/jetson_web && python3 -m unittest -v test_mqtt.MQTTTests.test_acl_isolates_each_node

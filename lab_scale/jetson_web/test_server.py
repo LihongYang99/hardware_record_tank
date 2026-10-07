@@ -1,4 +1,7 @@
+import csv
+import io
 import json
+import sqlite3
 from pathlib import Path
 import tempfile
 import threading
@@ -20,6 +23,74 @@ class StoreTests(unittest.TestCase):
 
     def tearDown(self):
         self.temp.cleanup()
+
+    def test_recording_off_rows_are_purged_after_12_hours_and_kept_rows_never(self):
+        self.assertTrue(all(self.store.recording().values()))  # default: every node records
+        self.store.ingest('shrimp-node01', record(1))
+        self.store.set_recording(False, 'web-li', ['shrimp-node01'])
+        self.assertEqual(self.store.recording(), {n: n != 'shrimp-node01' for n in self.store.recording()})
+        pump = 'node_id=shrimp-node04 boot_id=p sensor=PUMP_ATLAS_PMP seq=1 pump_on=0 COMM=OK QC=UNVALIDATED'
+        self.store.ingest('shrimp-node04', pump)  # the pump has its own switch: still kept
+        self.store.ingest('shrimp-node01', record(2))
+        self.store.ingest('shrimp-node01', record(5))  # sequence gap -> issue row, also not kept
+        self.assertEqual(self.store.purge(), 0)  # younger than 12 h: nothing removed
+        self.assertEqual(self.store.purge(max_age=0), 2)
+        with sqlite3.connect(self.store.path) as db:
+            self.assertEqual(db.execute('SELECT node_id FROM raw_log ORDER BY id').fetchall(), [('shrimp-node01',), ('shrimp-node04',)])
+            self.assertEqual(db.execute('SELECT DISTINCT sequence_number FROM measurement').fetchall(), [(1,)])
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM issue').fetchone()[0], 0)
+            self.assertEqual(db.execute("SELECT node_id, operator, command FROM operator_event").fetchall(), [('shrimp-node01', 'web-li', 'RECORDING_OFF')])
+        with self.assertRaises(ValueError):
+            self.store.set_recording(False, 'web-li', ['shrimp-node99'])
+        self.store.set_recording(False, 'web-li', ['shrimp-node04'])
+        self.store.ingest('shrimp-node04', pump.replace('seq=1', 'seq=2'))
+        self.assertEqual(self.store.purge(max_age=0), 1)  # only the pump row received while its switch was off
+        self.store.set_recording(True, 'web-li', ['shrimp-node01', 'shrimp-node04'])
+        self.store.ingest('shrimp-node01', record(6))
+        self.assertEqual(self.store.purge(max_age=0), 0)
+
+    def test_export_one_sample_per_minute_per_sensor(self):
+        ingest = lambda node, line: self.store.ingest(node, line)
+        ingest('shrimp-node01', record(1, values='COMM=ERROR QC=COMMUNICATION_ERROR reason=TIMEOUT'))
+        ingest('shrimp-node01', record(2, values='DO_mg_L=8.2 saturation_pct=92 temperature_C=24 COMM=OK QC=UNVALIDATED'))
+        ingest('shrimp-node01', record(3, values='DO_mg_L=8.3 saturation_pct=93 temperature_C=24 COMM=OK QC=UNVALIDATED'))
+        ingest('shrimp-node01', record(4, values='DO_mg_L=9.9 saturation_pct=99 temperature_C=25 COMM=OK QC=UNVALIDATED'))
+        ingest('shrimp-node06', 'node_id=shrimp-node06 boot_id=t sensor=TURB_SEN0710 seq=1 turbidity_NTU=3.5 temperature_C=21 COMM=OK QC=UNVALIDATED')
+        with sqlite3.connect(self.store.path) as db:  # seq 1-3 in one received minute, seq 4 in the next
+            db.execute('UPDATE measurement SET received_epoch = CASE WHEN sequence_number<4 THEN 600 + sequence_number ELSE 660 END')
+        def rows(**kw):
+            out = io.StringIO(); self.store.export(out, **kw); out.seek(0)
+            return list(csv.DictReader(out))
+        do = [r for r in rows(sensor='DO_SEN0681') if r['parameter'] == 'DO_mg_L']
+        self.assertEqual([(r['sequence_number'], r['value'], r['samples_in_minute']) for r in do], [('2', '8.2', '3'), ('4', '9.9', '1')])
+        self.assertIn('raw=01030C', do[0]['raw_line'])
+        self.assertNotIn('pick', do[0])
+        self.assertEqual({r['sensor_id'] for r in rows()}, {'DO_SEN0681', 'TURB_SEN0710'})
+        self.assertEqual(len(rows(sensor='DO_SEN0681', every=0)), 12)  # every 4 s sample, error rows included as NULL
+        for bad in ({'sensor': 'NOPE'}, {'every': 30}):
+            with self.assertRaises(ValueError):
+                rows(**bad)
+
+    def test_two_processes_can_open_and_migrate_the_same_file_at_once(self):
+        path = Path(self.temp.name) / 'old.sqlite3'
+        with sqlite3.connect(path) as db:  # pre-2026-10-06 layout: no keep column, no setting table
+            db.execute('PRAGMA journal_mode=WAL')  # every real database was created in WAL mode by Store
+            db.execute('CREATE TABLE raw_log (id INTEGER PRIMARY KEY, received_utc TEXT NOT NULL, received_epoch REAL NOT NULL, '
+                       'node_id TEXT NOT NULL, transport TEXT NOT NULL, line TEXT NOT NULL)')
+            db.executemany('INSERT INTO raw_log(received_utc,received_epoch,node_id,transport,line) VALUES(?,?,?,?,?)',
+                           [('t', 0.0, 'shrimp-node01', 'mqtt', 'x' * 200)] * 200000)
+        errors = []
+        def open_store():
+            try:
+                Store(path).ingest('shrimp-node01', record())
+            except Exception as error:
+                errors.append(error)
+        threads = [threading.Thread(target=open_store) for _ in range(3)]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join()
+        self.assertEqual(errors, [])
+        with sqlite3.connect(path) as db:
+            self.assertEqual(db.execute('SELECT COUNT(*) FROM raw_log WHERE keep=1').fetchone()[0], 200003)
 
     def test_unsynced_raw_and_metadata_preserved(self):
         self.assertEqual(self.store.ingest('shrimp-node01', record()), 3)
@@ -194,6 +265,17 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token)[1]['result'], 'OK')
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, token)[1]['command'], 'X')
             self.assertEqual(call(root, '/api/control', {'device': 'pump2', 'action': 'stop'}, token)[1]['command'], 'X')
+            self.assertEqual(call(root, '/api/recording', {'on': False})[0], 401)
+            for body in ({'on': 'no', 'nodes': ['shrimp-node04']}, {'on': False}, {'on': False, 'nodes': ['nope']}, {'on': False, 'nodes': 'shrimp-node04'}):
+                self.assertEqual(call(root, '/api/recording', body, token)[0], 400, body)
+            self.assertFalse(call(root, '/api/recording', {'on': False, 'nodes': ['shrimp-node05']}, token)[1]['recording']['shrimp-node05'])
+            status = call(root, '/api/status')[1]['recording']
+            self.assertEqual((status['shrimp-node05'], status['shrimp-node04']), (False, True))
+            self.store.set_recording(True, 'test', ['shrimp-node05'])
+            with urlopen(root + '/export.csv?sensor=DO_SEN0681') as response:
+                self.assertIn('DO_SEN0681_1min.csv', response.headers['Content-Disposition'])
+            with self.assertRaises(HTTPError):
+                urlopen(root + '/export.csv?sensor=NOPE')
             self.assertEqual(sent, [('pump1', 'DC,50.00,*', 'li'), ('pump1', 'X', 'li'), ('pump2', 'X', 'li')])
             self.assertEqual(call(root, '/api/control/events', cookie=token)[0], 200)
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'stop'}, 'forged-token')[0], 401)

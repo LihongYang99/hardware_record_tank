@@ -5,6 +5,7 @@ const qcText = {UNVALIDATED:'尚未科学验证',CONFIGURATION_MISMATCH:'配置�
 const nodeNames = {'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'泵 1','shrimp-node05':'泵 2','shrimp-node06':'Node 6'};
 // pump_on is the pump controller's own report, not proof that water is flowing.
 const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'运行中':'已停止') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
+const exportsFor=(node,sensors)=>{const box=make('div','exports');for(const sensor of sensors){box.append(make('span','',sensor));for(const [every,text] of [['60','↓ 每分钟 CSV'],['0','↓ 全部 CSV']]){const a=make('a','button small',text);a.href='/export.csv?sensor='+encodeURIComponent(sensor)+'&every='+every;box.append(a);}}return box;};
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {
   const canvas=$('chart'), ratio=window.devicePixelRatio||1, w=canvas.clientWidth, h=220;
@@ -34,7 +35,7 @@ async function refresh(){
     const response=await fetch('/api/status');if(!response.ok)throw Error('status');const data=await response.json();
     $('serverDot').classList.add('connected');$('gateway').textContent='Jetson 网页服务在线';
     series=data.series;
-    if(!initialized){series.forEach((s,i)=>{const option=make('option','',s.label+' · '+(nodeNames[s.node]||s.sensor));option.value=i;$('series').append(option);});initialized=true;}
+    if(!initialized){series.forEach((s,i)=>{const option=make('option','',s.label+' · '+(nodeNames[s.node]||s.sensor));option.value=i;$('series').append(option);});const bySensor={};series.forEach(s=>(bySensor[s.node]=bySensor[s.node]||[]).includes(s.sensor)||bySensor[s.node].push(s.sensor));for(const [node,list] of Object.entries(bySensor)){const m=$('metrics-'+node);if(m)m.after(exportsFor(node,list));}initialized=true;}
     const waiting=[];
     for(const [node,config] of Object.entries(data.nodes)){
       const network=data.network[node]||{}, rows=data.latest.filter(r=>r.node_id===node), fresh=rows.filter(r=>!r.stale);
@@ -51,7 +52,7 @@ async function refresh(){
       const last=rows.reduce((a,r)=>r.received_utc>a?r.received_utc:a,'');
       $('detail-'+node).textContent=(config.ip||'IP 待核对')+' · '+(network.identity_verified?'MAC 已核对':'MAC 待核对')+' ｜ 采样 UTC：未同步 / 未验证'+(last?' ｜ 最后接收：'+last:' ｜ 尚无测量记录');
     }
-    $('notice').textContent=(waiting.length?waiting.join('、')+' 尚未接入实时测量。设备联网不代表数据已经发送。':'测量已接入；请同时检查每个传感器的 QC 和是否过期。')+' 采样时间未同步时不补造 UTC。'+(!data.metadata_configured?' 实验 / 水缸标识尚未配置。':'');
+    $('notice').textContent=(waiting.length?waiting.join('、')+' 尚未接入实时测量。设备联网不代表数据已经发送。':'测量已接入；请同时检查每个传感器的 QC 和是否过期。')+' 采样时间未同步时不补造 UTC。'+(!data.metadata_configured?' 实验 / 水缸标识尚未配置。':'')+((off=>off.length?' '+off.join('、')+' 未开启长期记录：新数据只保留最近 12 小时（在设备控制页开启）。':'')(Object.keys(data.recording||{}).filter(n=>!data.recording[n]).map(n=>nodeNames[n]||n)));
     $('count').textContent=data.stats.measurements;$('rawCount').textContent=data.stats.raw_records;$('issueCount').textContent=data.stats.issues;
     $('cameraStatus').textContent=data.camera.state;$('cameraStatus').className='badge'+(data.camera.live?' live':' warn');
     $('cameraEmpty').hidden=data.camera.live;$('cameraFrame').hidden=!data.camera.live;
