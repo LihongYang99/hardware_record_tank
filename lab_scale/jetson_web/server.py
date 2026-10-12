@@ -25,6 +25,7 @@ NODES = {
     'shrimp-node04': {'name': 'Pump 1 · 泵 1', 'ip': '192.168.88.248', 'mac': '7c:4f:ad:b5:33:38'},
     'shrimp-node05': {'name': 'Pump 2 · 泵 2', 'ip': '192.168.88.247', 'mac': '7c:4f:ad:b5:1c:d4'},
     'shrimp-node06': {'name': 'Node 6 · 浊度', 'ip': '192.168.88.246', 'mac': '44:b1:76:ce:d8:6c'},
+    'shrimp-node07': {'name': 'Node 7 · 加热器', 'ip': None, 'mac': None},
 }
 PUMP_PARAMETERS = [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
                    ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]
@@ -34,6 +35,8 @@ SENSORS = {
     'EC_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-EC', [('EC_uS_cm', 'EC', 'µS/cm'), ('salinity_PSU', '盐度', 'PSU')]),
     'PH_ATLAS_EZO': ('shrimp-node02', 'Atlas EZO-pH', [('pH', 'pH', 'pH')]),
     # Turbidity is reported as NTU only; it is not eTSS until a site gravimetric calibration exists.
+    # relay_on is the node's own GPIO/relay command state, not a measured heater current or water temperature.
+    'HEATER_RELAY': ('shrimp-node07', 'IoT AC relay CH1', [('relay_on', '加热器继电器', '')]),
     'TURB_SEN0710': ('shrimp-node06', 'DFRobot SEN0710', [('turbidity_NTU', '浊度', 'NTU'), ('temperature_C', '浊度探头温度', '°C')]),
     # pump_on is the controller's own report (D,?), not proof of water flow.
     'PUMP_ATLAS_PMP': ('shrimp-node04', 'Atlas EZO-PMP', PUMP_PARAMETERS),
@@ -186,14 +189,27 @@ class Store:
         with self.connect() as db:
             return {node: bool(db.execute(f'SELECT {KEEP}', (node,)).fetchone()[0]) for node in NODES}
 
+    def settings(self):
+        with self.connect() as db:
+            return dict(db.execute('SELECT key, value FROM setting').fetchall())
+
+    def put_setting(self, key, value, node, operator, command, note='control page'):
+        with self.connect() as db:
+            db.execute('INSERT INTO setting(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', (key, value))
+            self.log_event(node, operator, command, note, 'result=OK', db)
+
+    def log_event(self, node, operator, command, note, result, db=None):
+        if db is None:
+            with self.connect() as db:
+                return self.log_event(node, operator, command, note, result, db)
+        db.execute('INSERT INTO operator_event(sent_utc,node_id,cmd_id,operator,command,note,result_line) VALUES(?,?,?,?,?,?,?)',
+                   (utc(), node, f'{time.time_ns()}-{node}', operator, command, note, result))
+
     def set_recording(self, on, operator, nodes):
         if not nodes or any(node not in NODES for node in nodes):
             raise ValueError('Unknown node')
-        with self.connect() as db:
-            for node in nodes:
-                db.execute('INSERT INTO setting(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value', ('recording:' + node, int(on)))
-                db.execute('INSERT INTO operator_event(sent_utc,node_id,cmd_id,operator,command,note,result_line) VALUES(?,?,?,?,?,?,?)',
-                           (utc(), node, f'{time.time_ns()}-{node}', operator, 'RECORDING_ON' if on else 'RECORDING_OFF', 'control page', 'result=OK'))
+        for node in nodes:
+            self.put_setting('recording:' + node, int(on), node, operator, 'RECORDING_ON' if on else 'RECORDING_OFF')
 
     def purge(self, max_age=RECENT_ONLY_S, batch=5000):
         """Delete rows received while recording was off, once older than max_age. Kept rows are never touched.
@@ -350,7 +366,7 @@ class Network:
             return dict(self.states)
 
 
-def handler_for(store, camera, network, ingest_only=False, pump=None):
+def handler_for(store, camera, network, ingest_only=False, pump=None, heater=None):
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_args):
             pass
@@ -425,6 +441,26 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
                 except ValueError:
                     return self.send({'error': 'Invalid request'}, status=400)
                 return self.send({'recording': store.recording()})
+            if self.path == '/api/heater':
+                import heater_ctl
+                enabled, setpoint = body.get('enabled'), body.get('setpoint')
+                try:
+                    if heater is None or (enabled is None and setpoint is None) or (enabled is not None and not isinstance(enabled, bool)):
+                        raise ValueError('Invalid request')
+                    if setpoint is not None:
+                        setpoint = float(setpoint)
+                        low, high = heater_ctl.SETPOINT_RANGE
+                        if isinstance(body['setpoint'], bool) or not math.isfinite(setpoint) or not low <= setpoint <= high:
+                            raise ValueError('Setpoint out of range')
+                        store.put_setting('heater:setpoint', round(setpoint, 1), heater_ctl.NODE, 'web-' + user, f'HEATER_SETPOINT,{setpoint:.1f}')
+                    if enabled is not None:
+                        if enabled and store.settings().get('heater:setpoint') is None:
+                            raise ValueError('Set a temperature first')
+                        store.put_setting('heater:enabled', int(enabled), heater_ctl.NODE, 'web-' + user, 'HEATER_AUTO_ON' if enabled else 'HEATER_AUTO_OFF')
+                except (ValueError, TypeError):
+                    return self.send({'error': 'Invalid request'}, status=400)
+                heater.wake.set()  # apply within a moment instead of at the next 10 s step
+                return self.send({'heater': store.settings()})
             device, action = body.get('device'), body.get('action')
             try:
                 if not isinstance(device, str) or pump.kind(device) != 'pump':
@@ -445,7 +481,7 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
             return self.send(dict(result, device=device, command=command), status=status)
 
         def do_POST(self):
-            if not ingest_only and self.path in ('/api/login', '/api/logout', '/api/control', '/api/recording'):
+            if not ingest_only and self.path in ('/api/login', '/api/logout', '/api/control', '/api/recording', '/api/heater'):
                 return self.control_post()
             if not ingest_only or self.path != '/ingest':
                 return self.send({'error': 'Read-only dashboard'}, status=405)
@@ -480,6 +516,7 @@ def handler_for(store, camera, network, ingest_only=False, pump=None):
                                       'network': network.snapshot(), 'nodes': NODES, 'camera': camera.snapshot(),
                                       'metadata_configured': bool(os.getenv('TANK_ID') and os.getenv('EXPERIMENT_ID')),
                                       'recording': store.recording(),
+                                      'heater': heater.snapshot() if heater else None,
                                       'series': [{'sensor': sensor, 'parameter': p, 'label': label, 'unit': unit, 'node': data[0]}
                                                  for sensor, data in SENSORS.items() for p, label, unit in data[2]]})
                 if parsed.path == '/api/session':
@@ -553,7 +590,12 @@ def main():
     if args.pump_control:
         import pump_ctl
         pump = pump_ctl.WebControl(args.db, argparse.Namespace(credentials=str(ROOT / 'data/mqtt/credentials.json'), host='127.0.0.1', port=1883))
-    public = ThreadingHTTPServer((args.bind, args.port), handler_for(store, camera, network, pump=pump))
+    heater = None
+    if pump:  # the thermostat publishes with the same pump-operator account; without --pump-control the heater stays off
+        import heater_ctl, pump_ctl
+        heater = heater_ctl.Thermostat(store, pump.conn, pump_ctl.publish)
+        threading.Thread(target=heater.run, daemon=True).start()
+    public = ThreadingHTTPServer((args.bind, args.port), handler_for(store, camera, network, pump=pump, heater=heater))
     local = ThreadingHTTPServer(('127.0.0.1', args.ingest_port), handler_for(store, camera, network, True))
     (Path(args.db).parent / 'server.pid').write_text(str(os.getpid()) + '\n')
     def purge_forever():

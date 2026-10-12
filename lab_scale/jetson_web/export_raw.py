@@ -15,7 +15,7 @@ from server import NODES, SENSORS, fields
 
 ROOT = Path(__file__).resolve().parent
 FOLDERS = {'shrimp-node01': 'Node-1-ORP-DO', 'shrimp-node02': 'Node-2-pH-Conductivity', 'shrimp-node04': 'Pump-1',
-           'shrimp-node05': 'Pump-2', 'shrimp-node06': 'Node-6-Turbidity'}
+           'shrimp-node05': 'Pump-2', 'shrimp-node06': 'Node-6-Turbidity', 'shrimp-node07': 'Node-7-Heater'}
 assert set(FOLDERS) == set(NODES), 'every node needs a Raw_data folder'
 
 

@@ -34,6 +34,7 @@
 | [pump-node-1](pump-node-1/README.md) | shrimp-node04（总 Node 4） | Atlas EZO-PMP 旁路蠕动泵，UART 直连单独 ESP32 | 192.168.88.248 | 7C:4F:AD:B5:33:38 |
 | [pump-node-2](pump-node-2/README.md) | shrimp-node05（总 Node 5，泵 2） | Atlas EZO-PMP 第二个旁路泵（暂定），与泵 1 同接线、同代码 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 |
 | [Node-6](Node-6/README.md) | shrimp-node06 | DFRobot SEN0710 浊度，RS485 Modbus，单独 ESP32 | 192.168.88.246 | 44:B1:76:CE:D8:6C |
+| [Node-7](Node-7/README.md) | shrimp-node07 | 双路 IoT 交流继电器 CH1 控制加热器（网关自动控温，DECISION 052） | 待联网 | 待 esptool 读取 |
 | [camera_node](camera_node/README.md) | ONVIF name `NVT` | 水下 IP 相机（有线接路由器） | 192.168.1.88 | 00:12:34:C6:67:04 |
 | [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200；学校 Wi-Fi 10.141.48.128（会变） | 4C:BB:47:62:1F:66 |
 
@@ -51,6 +52,7 @@
 - 仍未完成：UTC 同步、断电持久缓存（RAM 队列 64 条：Node 1 约 80 s、Node 2 约 27 s）、路由器/Wi-Fi 断开测试、长时间运行、校准、Raspberry Pi 正式网关。
 - Node 1、Node 2、泵 1、泵 2 的 ESP32 都经 USB Type-C 直接接电源适配器供电（用户 2026-09-27 确认；泵 1 于当晚 20:46 EDT 前从 Jetson USB 改接独立适配器，Jetson 上已无串口设备），不接 Jetson；适配器型号未记录；没有 UPS，断电时节点和 RAM 缓冲一起丢失。要烧录或看串口日志时再把对应板子插回 Jetson。
 - 2026-09-27：Jetson 于 14:12 EDT 重启后 broker/接收器/网页没有自动启动；数据库最后一条 Node 1/2 记录为 16:42:38Z（12:42 EDT），到 20:39Z 仍无新数据，这段数据未被接收（超出节点 RAM 缓冲）。这是"无开机自启"缺口的实际后果。
+- 2026-10-12：服务 10:50 EDT 启动后，Jetson 10:51 正常关机重启（不是死机或断电），broker/接收器/网页没有自动启动，8080 和 1883 无程序监听，相机临时地址 192.168.1.200 也丢失；最后一条数据 10:51:31，之后约 6.5 小时未保存。重启步骤见 [jetson_web README](jetson_web/README.md#2026-10-12jetson-重启后网页打不开)。
 - 2026-09-27：新增泵 1（pump-node-1，DECISION 048）。固件 0.2 已烧录（MAC 7C:4F:AD:B5:33:38，IP 192.168.88.248）；两种校准完成（10 mL 指令实测 8.3 mL，复核 9.7 mL），恒定流量上限 45.36 mL/min；操作经 MQTT `cmd` 主题下发，只有 `pump-operator` 账号能写。终端 `jetson_web/pump_ctl.py`，网页 `/control`（中文）、`/control/en`（英文，个人账号登录）。当天遇到的问题（演示灯、泵板没上电、80 mL/min 超上限、校准被拒、两种校准独立、设定流量卡片空、控制页三次改版）及处理见 [pump-node-1 README 调试过程](pump-node-1/README.md#调试过程2026-09-27摘要)。
 
 台架节点分配与 SPEC 的正式 MID/BOTTOM 编号分开，N16R8 与首选 N8R8 的差异在此记录，不修改正式部署设计。
@@ -61,8 +63,8 @@
 当前板上程序是 MQTT 版本：Node-1 `Node-1/script/DO_ORP_MQTT/`，Node-2 `Node-2/script/Atlas_EC_pH_MQTT/`；泵 1 程序 `pump-node-1/script/PMP_MQTT/`（`--node 4`，0.2 已烧录）；泵 2 程序 `pump-node-2/script/PMP_MQTT/`（`--node 5`，与泵 1 共用头文件，待烧录）。旧版 `DO_ORP_WiFi/`、`Atlas_EC_pH_UART/`（仅 USB 串口）保留作回退。
 
 1. 保留整个 sketch 文件夹，所有 `.h` 都参与同一次编译，不单独上传。
-2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2|4|5|6 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
-3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2|4|5|6`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
+2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2|4|5|6|7 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
+3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2|4|5|6|7`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
 4. 烧录前核对 `/dev/serial/by-id/` 中的 MAC 与目标节点一致，并先回读 flash 备份（见各固件 README）。固件启动时也会检查出厂 MAC，不符就不运行传感器。
 5. USB Serial 115200 仍输出同样的日志行；拔掉 USB 不影响 MQTT 发送，但板子需要其他 5 V 供电。
 

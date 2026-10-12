@@ -342,3 +342,30 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 > data/ser
 ## 2026-10-06：相机每分钟存一帧（Raw_data/Node-3-Camera）
 
 用户要求把"Node 3"（台架对相机的叫法；SPEC 的 NODE 03 是规划中的 H₂S 节点）的画面也存下来，每分钟一帧。`server.py` 新增一个线程：每到整分钟，如果画面 10 秒内更新过，就把当前 JPEG 存到仓库根目录 `Raw_data/Node-3-Camera/<UTC 日期>/<HHMMSS>Z.jpg`（文件名是 Jetson 解码时间），先写临时文件再改名。视频断开时跳过，不存旧画面。约 36 KB/张、51 MB/天。`--frames-dir ''` 可关闭。JPEG 不进 Git。测试 24 项通过。需要重启 `server.py` 生效。
+
+## 2026-10-12：Jetson 重启后网页打不开
+
+网页打不开，是因为 Jetson 在今天 10:51 重启了，网页、broker、接收器都没有自动启动。
+
+- 10:50 启动了服务，1 分钟后 10:51 系统正常关机并重启。日志显示的是一次正常关机，不是死机或断电。
+- 重启以后 8080 和 1883 两个端口都没有程序在监听，所以网页打不开。
+- 相机网段的临时地址 192.168.1.200 也没了。
+- 最后一条数据是 10:51:31，之后到发现时大约 6.5 小时的数据没有保存。
+
+重新启动（Jetson 终端）：
+
+```bash
+cd ~/Documents/GitHub/hardware_record_tank/lab_scale/jetson_web
+sudo ip addr add 192.168.1.200/24 dev enP8p1s0
+nohup python3 -u run_mqtt.py > data/mqtt.log 2>&1 & echo $! > data/mqtt.pid
+set -a; . ./.env; set +a
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 --pump-control > data/server.log 2>&1 & echo $! > data/server.pid
+```
+
+## 2026-10-12：Node 7 加热器与自动控温（DECISION 052）
+
+- 网关加入 node07：`server.py` 的 NODES 与 `HEATER_RELAY`（参数 `relay_on`）、`mqtt_receiver.py`、`prepare_mqtt.py`（COMMAND_NODES 加 node07）、`configure_node1.py`/`build_node1.py` 的 `--node 7`、`export_raw.py`（`Raw_data/Node-7-Heater/`）、中英文监控页"07 / HEATER"面板。
+- 新文件 [heater_ctl.py](heater_ctl.py)：`server.py --pump-control` 启动时运行的控温线程。每 10 s 取 DO 探头与浊度探头温度的平均值，低于设定温度发 `HEAT,ON`，达到设定 + 0.5 °C 发 `HEAT,OFF`；开启期间每 20 s 重发。任一探头无数据 / 过期 30 s / QC 异常 / 超出 0–40 °C，或两探头相差 > 3 °C，都断电。不带 `--pump-control` 时控温不运行，加热器在 60 s 内断电。
+- 接口：`POST /api/heater {setpoint, enabled}`（需登录；5–32 °C；没设温度不能打开自动控温）；`/api/status` 新增 `heater`（平均水温、两个来源、设定、开关、原因）。设定保存在数据库 `setting` 表（`heater:setpoint`、`heater:enabled`），每次修改和每次通断都记入 `operator_event`。
+- 控制页新增"加热器"卡片：平均水温（及两个探头读数）、设定温度、继电器状态、原因、保存温度、打开 / 关闭自动控温、node07 的数据记录开关。
+- 测试 28 项通过（新增：平均与各种断电原因、回差、20 s 重发、通断记录、broker 不可用、接口登录与校验）。需要重启 `run_mqtt.py` 和 `server.py`。

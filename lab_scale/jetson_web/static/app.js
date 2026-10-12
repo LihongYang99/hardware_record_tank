@@ -2,9 +2,9 @@
 const $ = id => document.getElementById(id);
 let series = [], history = [], refreshing = false, initialized = false;
 const qcText = {UNVALIDATED:'尚未科学验证',CONFIGURATION_MISMATCH:'配置不匹配',COMPENSATION_MISSING:'缺少温度补偿',COMMUNICATION_ERROR:'传感器通信错误',SENSOR_FAULT:'传感器异常',OUT_OF_RANGE:'超出范围',MISSING_VALUE:'缺少测量值',OK:'QC: OK',STATE_MISMATCH:'INT 引脚与控制器状态不一致',MOTOR_VOLTAGE_LOW:'控制器报告运行，但电机电压过低',NOT_RUNNING_AS_COMMANDED:'未按设定流量运行'};
-const nodeNames = {'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'泵 1','shrimp-node05':'泵 2','shrimp-node06':'Node 6'};
+const nodeNames = {'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'泵 1','shrimp-node05':'泵 2','shrimp-node06':'Node 6','shrimp-node07':'Node 7 · 加热器'};
 // pump_on is the pump controller's own report, not proof that water is flowing.
-const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'运行中':'已停止') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
+const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'运行中':'已停止') : s.parameter==='relay_on' ? (row.value?'通电':'断电') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
 const exportsFor=(node,sensors)=>{const box=make('div','exports');for(const sensor of sensors){box.append(make('span','',sensor));for(const [every,text] of [['60','↓ 每分钟 CSV'],['0','↓ 全部 CSV']]){const a=make('a','button small',text);a.href='/export.csv?sensor='+encodeURIComponent(sensor)+'&every='+every;box.append(a);}}return box;};
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {

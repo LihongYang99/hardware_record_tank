@@ -10,9 +10,9 @@ import shutil
 import subprocess
 
 ROOT = Path(__file__).resolve().parent
-NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04', 'shrimp-node05', 'shrimp-node06')
+NODES = ('shrimp-node01', 'shrimp-node02', 'shrimp-node04', 'shrimp-node05', 'shrimp-node06', 'shrimp-node07')
 # Only these nodes accept operator commands, and only the pump-operator account may send them.
-COMMAND_NODES = ('shrimp-node04', 'shrimp-node05')
+COMMAND_NODES = ('shrimp-node04', 'shrimp-node05', 'shrimp-node07')
 
 
 def prepare(directory, host):

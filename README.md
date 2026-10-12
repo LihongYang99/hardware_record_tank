@@ -10,7 +10,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 
 **2026-10-12 核对时的状态**：
 
-- **网关服务没在运行**：最后一条数据是 2026-10-11 07:10 EDT；Jetson 当天 07:55 重启，服务没有自动启动。启动命令见 [jetson_web README](lab_scale/jetson_web/README.md)。
+- **网关服务没在运行**：2026-10-11 07:10 EDT 起停机（当天 07:55 重启）；10-12 10:50 重新启动服务，1 分钟后 10:51 Jetson 又正常关机重启（日志是正常关机，不是死机或断电），服务没有自动启动，8080/1883 无程序监听，相机临时地址 192.168.1.200 也没了。最后一条数据 10:51:31，之后约 6.5 小时没有保存。重启命令见 [jetson_web README](lab_scale/jetson_web/README.md#2026-10-12jetson-重启后网页打不开)。
 - **Node 1、Node 2、Node 6 的"长期记录"关着**（用户 2026-10-06 17:43 EDT 在控制页关闭，调试数据不保留）：这三个节点的数据只留 12 小时，按设计自动删除。泵 1、泵 2 一直在长期记录。需要正式记录时在控制页打开。`Raw_data/` 里的部分旧文件也是用户自己删除的。
 - **Node 2 的 pH**：2026-10-06 17:16 EDT 起不回复（`REPLY_TIMEOUT`，EC 正常）；用户 2026-10-12 报告已恢复，网关服务启动后核对。
 - **Node 6 浊度读数是 1000 NTU（满量程）**：原因已知，探头戴着保护盖，用户正在自行调试，不是故障。
@@ -26,8 +26,9 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 | [lab_scale / pump-node-1](lab_scale/pump-node-1/README.md) | **泵 1**；shrimp-node04（总 Node 4）；单独 ESP32-S3；Atlas EZO-PMP 蠕动泵（UART） | 192.168.88.248 | 固件 0.2 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 45.36 mL/min；终端 `pump_ctl.py` 与网页控制页可开关、调流速；每条操作记录操作人和泵回复（DECISION 048）；USB Type-C 电源适配器独立供电，不接 Jetson | 流量计（"运行中"只是控制器报告）、盐水软管兼容性、黑线 GND 与电机负极是否相通、长期运行；45 mL/min 低于 SPEC §29 构想值 |
 | [lab_scale / pump-node-2](lab_scale/pump-node-2/README.md) | **泵 2**；shrimp-node05（总 Node 5）；单独 ESP32-S3；Atlas EZO-PMP（UART），与泵 1 同接线、同代码 | 192.168.88.247 | 2026-09-29 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 49.63 mL/min，复核 9.85 mL；中英文监控页面板、控制页卡片（DECISION 049） | 流量计、盐水软管兼容性；用途暂定第二个旁路泵，SPEC 未改 |
 | [lab_scale / Node-6](lab_scale/Node-6/README.md) | shrimp-node06；ESP32-S3；DFRobot SEN0710 浊度，RS485 Modbus | 192.168.88.246 | 2026-09-29 已烧录，实时进入网页，通信无错误（DECISION 050） | 读数 1000 NTU 满量程是因为探头戴着保护盖（用户调试中）；摘盖入水后的读数待核对；盐水长期浸泡未确认；只报 NTU，不是 eTSS |
+| [lab_scale / Node-7](lab_scale/Node-7/README.md) | shrimp-node07；ESP32-S3；双路 IoT 交流继电器 CH1（常断插座）控制加热器 | 待联网 | 2026-10-12 固件、broker 账号、网关自动控温（DO 与浊度探头温度平均、回差 0.5 °C、断联 60 s 自动断电）、控制页加热器卡片已就绪（DECISION 052） | 控制线接线核对、读 MAC、烧录、先用台灯测试；继电器 / 加热器型号未记录 |
 | [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 水下 IP 相机，标签 IPC5MPIR-PBX10 | 192.168.1.88（MAC 已核对） | ONVIF 取得视频地址；子码流 704×576 实时预览进入网页；网页服务运行时每分钟存一张 JPEG（`Raw_data/Node-3-Camera/`，约 51 MB/天；台架称 Node 3） | 录像策略、相机时钟（差约 6 个月）、改默认密码、淡水款不批准目标盐度长期部署 |
-| [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文监控页 + 登录控制页；落库后才 ACK；按节点记录开关与 12 小时清理；按传感器 / 每分钟导出；IP 静态租约 | **开机自启**（已 4 次因重启或停机丢数据：09-27、09-30 至 10-06、10-11 起）、数据备份、迁移到 Raspberry Pi |
+| [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文监控页 + 登录控制页；落库后才 ACK；按节点记录开关与 12 小时清理；按传感器 / 每分钟导出；IP 静态租约 | **开机自启**（已 5 次因重启或停机丢数据：09-27、09-30 至 10-06、10-11、10-12 10:51 起）、数据备份、迁移到 Raspberry Pi |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
 
 Jetson 和各 ESP32 节点的 IP 已固定（路由器静态租约），完整列表见下方[设备 IP 一览](#设备-ip-一览2026-09-30-核对)；仍以 MAC 核对身份为准。
@@ -99,6 +100,7 @@ lab_scale/
     script/PMP_MQTT/       # 当前板上程序（MQTT 0.2，含操作命令）
   pump-node-2/             # 泵 2（总 Node 5），与泵 1 共用固件代码
   Node-6/                  # 浊度（DFRobot RS485），script/TURB_MQTT/
+  Node-7/                  # 加热器继电器（水温控制），script/HEATER_MQTT/
   camera_node/             # 相机文档；接入代码在 jetson_web
   jetson_web/              # Jetson 临时网关：MQTT broker、接收器、数据库、网页
   CHANGELOG.md             # 仓库整理记录
@@ -107,8 +109,8 @@ Raw_data/                  # 各节点 / 传感器的原始日志行，按天导
 tank_scale/README.md        # 未来实际部署
 ```
 
-每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2|4|5|6` 生成
-`arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz；4 = pump-node-1，5 = pump-node-2，6 = 浊度），编译用 `build_node1.py --node 1|2|4|5|6`；真实密码文件禁止提交。
+每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2|4|5|6|7` 生成
+`arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz；4 = pump-node-1，5 = pump-node-2，6 = 浊度，7 = 加热器），编译用 `build_node1.py --node 1|2|4|5|6|7`；真实密码文件禁止提交。
 烧录前的板上 flash 备份在 `.codex-build/node*-backup/`（不入 Git），回退命令见各固件 README。
 
 完整阶段记录见 [lab_scale README](lab_scale/README.md) 与各节点的 PROGRESS.md。

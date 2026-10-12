@@ -7,13 +7,13 @@ const labels = {'DO_SEN0681/DO_mg_L':'Dissolved oxygen','DO_SEN0681/saturation_p
   'ORP_SEN0709/ORP_mV':'ORP','ORP_SEN0709/temperature_C':'Temp (ORP probe)','EC_ATLAS_EZO/EC_uS_cm':'Conductivity (EC)',
   'EC_ATLAS_EZO/salinity_PSU':'Salinity','PH_ATLAS_EZO/pH':'pH','PUMP_ATLAS_PMP/pump_on':'Pump state','PUMP_ATLAS_PMP/target_mL_min':'Flow setpoint',
   'PUMP_ATLAS_PMP/motor_V':'Motor supply','PUMP_ATLAS_PMP/total_volume_mL':'Volume since power-up',
-  'TURB_SEN0710/turbidity_NTU':'Turbidity','TURB_SEN0710/temperature_C':'Temp (turbidity probe)'};
+  'HEATER_RELAY/relay_on':'Heater relay','TURB_SEN0710/turbidity_NTU':'Turbidity','TURB_SEN0710/temperature_C':'Temp (turbidity probe)'};
 for (const k of Object.keys(labels)) if (k.startsWith('PUMP_ATLAS_PMP/')) labels['PUMP2'+k.slice(4)] = labels[k];
 const exportsFor=(node,sensors)=>{const box=make('div','exports');for(const sensor of sensors){box.append(make('span','',sensor));for(const [every,text] of [['60','↓ 1-min CSV'],['0','↓ all CSV']]){const a=make('a','button small',text);a.href='/export.csv?sensor='+encodeURIComponent(sensor)+'&every='+every;box.append(a);}}return box;};
 const cameraText = {LIVE:'Live video',CONNECTING:'Connecting',RETRYING:'Connection lost · retrying',NOT_CONFIGURED:'Not configured',NO_GSTREAMER:'Decoder unavailable'};
-const nodeName = node => ({'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'Pump 1','shrimp-node05':'Pump 2','shrimp-node06':'Node 6'})[node] || node;
+const nodeName = node => ({'shrimp-node01':'Node 1','shrimp-node02':'Node 2','shrimp-node04':'Pump 1','shrimp-node05':'Pump 2','shrimp-node06':'Node 6','shrimp-node07':'Node 7 · Heater'})[node] || node;
 // pump_on is the pump controller's own report, not proof that water is flowing.
-const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'Running':'Stopped') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
+const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row.value?'Running':'Stopped') : s.parameter==='relay_on' ? (row.value?'Powered':'Off') : Number(row.value).toLocaleString('en-US',{maximumFractionDigits:3})) : '—';
 const label = s => labels[s.sensor + '/' + s.parameter] || s.parameter;
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {

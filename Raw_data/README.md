@@ -11,6 +11,7 @@
 | `Pump-1/` | `PUMP_ATLAS_PMP/` | 泵 1 的状态、操作命令和泵的回复 |
 | `Pump-2/` | `PUMP2_ATLAS_PMP/` | 泵 2 同上 |
 | `Node-6-Turbidity/` | `TURB_SEN0710/` | DFRobot 浊度 |
+| `Node-7-Heater/` | `HEATER_RELAY/` | 加热器继电器状态与开关事件 |
 | `Node-3-Camera/` | `YYYY-MM-DD/` | 水下相机，每分钟一张 JPEG（见下） |
 | 每个节点下的 `node_log/` | — | 不属于某个传感器的节点日志：开机、健康、Wi-Fi |
 

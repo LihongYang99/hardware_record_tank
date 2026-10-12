@@ -103,7 +103,7 @@ class MQTTTests(unittest.TestCase):
         self.assertIn('topic read shrimp/lab/shrimp-node04/cmd', pump)
         self.assertNotIn('/cmd', next(block for block in acl if block.startswith('shrimp-node01')))
         operator = next(block for block in acl if block.startswith('pump-operator'))
-        self.assertEqual(operator.strip().splitlines()[1:], ['topic write shrimp/lab/shrimp-node04/cmd', 'topic write shrimp/lab/shrimp-node05/cmd'])
+        self.assertEqual(operator.strip().splitlines()[1:], ['topic write shrimp/lab/shrimp-node04/cmd', 'topic write shrimp/lab/shrimp-node05/cmd', 'topic write shrimp/lab/shrimp-node07/cmd'])
         pump2 = next(block for block in acl if block.startswith('shrimp-node05'))
         self.assertIn('topic read shrimp/lab/shrimp-node05/cmd', pump2)
         self.assertNotIn('shrimp-node04', pump2)

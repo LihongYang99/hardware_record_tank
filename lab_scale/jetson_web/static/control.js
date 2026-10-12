@@ -26,11 +26,21 @@ const T = EN ? {
   loggingIn: 'Logging in…', loginFailed: 'Login failed', gateway: 'Gateway time ', unreachable: 'Cannot reach the web service.',
   describe: {start: r => 'Start ' + r + ' mL/min', stop: 'Stop', dispenseOver: (ml, min) => 'Dispense ' + ml + ' mL over ' + min + ' min', dispense: ml => 'Dispense ' + ml + ' mL',
     calClear: 'Clear calibration', cal: ml => 'Calibrate (measured ' + ml + ' mL)', query: c => 'Query ' + c,
-    RECORDING_ON: 'Start long-term recording', RECORDING_OFF: 'Stop long-term recording (keep 12 h)'},
+    RECORDING_ON: 'Start long-term recording', RECORDING_OFF: 'Stop long-term recording (keep 12 h)',
+    'HEAT,ON': 'Heater on (thermostat)', 'HEAT,OFF': 'Heater off (thermostat)', HEATER_AUTO_ON: 'Automatic temperature control on', HEATER_AUTO_OFF: 'Automatic temperature control off'},
   rec: {cardEyebrow: 'GATEWAY · DATA RECORDING', eyebrow: 'Data recording', sensors: 'Sensor nodes', on: 'Recording: kept long-term', off: 'Not recording: kept 12 h only',
     note: 'Each node has its own switch; each pump has its own on its card. Data received while recording is on is kept permanently; while it is off it is deleted automatically after 12 hours (useful while debugging). Switching only affects data received from now on; nothing already kept is deleted.',
     start: 'Start long-term recording', stop: 'Stop (keep only 12 h)', confirmOn: 'Keep all data received from now on?',
-    confirmOff: 'Data received from now on will be deleted after 12 hours. Continue?', done: 'Saved.'}
+    confirmOff: 'Data received from now on will be deleted after 12 hours. Continue?', done: 'Saved.'},
+  heat: {eyebrow: 'NODE 7 · HEATER', title: 'Heater (water temperature control)', water: 'Water temperature (mean)', setpoint: 'Set temperature',
+    relay: 'Relay CH1', on: 'Powered', off: 'Off', auto: 'Automatic control', autoOn: 'On', autoOff: 'Off (heater stays off)',
+    enable: 'Turn automatic control on', disable: 'Turn automatic control off', save: 'Save temperature', setLabel: 'Set temperature °C',
+    confirmEnable: t => 'Heat automatically whenever the water is below ' + t + ' °C?', confirmDisable: 'Turn automatic control off? The heater will switch off.',
+    range: (a, b) => 'Set temperature must be between ' + a + ' and ' + b + ' °C.', needSetpoint: 'Save a set temperature first.',
+    rule: h => 'Heats when the mean of the DO probe and turbidity probe temperatures is below the set temperature, stops at set + ' + h + ' °C. Any missing, stale or disagreeing probe (> 3 °C apart) switches the heater off; the relay also opens by itself 60 s after the gateway stops repeating ON. Relay state is the node\u2019s command state, not measured heater power.',
+    reason: {BELOW_SETPOINT: 'Below set temperature: heating', AT_SETPOINT: 'At set temperature: off', HOLD: 'Within hysteresis: keeping state', DISABLED: 'Automatic control off',
+      NO_SETPOINT: 'No set temperature', SOURCES_DISAGREE: 'Probes disagree by more than 3 °C: off'}, reasonPrefix: {NO_DATA: 'No valid reading from ', STALE: 'Stale reading from ', IMPLAUSIBLE: 'Implausible reading from '},
+    broker: ' · MQTT broker unavailable (relay will open by itself)'}
 } : {
   result: {OK:'设备已接受',ER:'设备拒绝了这条命令',PUMP_NOT_READY:'设备还没初始化好，稍后再试',ANOTHER_COMMAND_PENDING:'上一条命令还没完成',
     DUPLICATE_ID:'重复命令，已忽略',NO_REPLY:'节点没有回复（可能离线）；先确认状态再重试',BUSY:'另一条网页命令正在执行',
@@ -53,11 +63,21 @@ const T = EN ? {
   loggingIn: '正在登录…', loginFailed: '登录失败', gateway: '网关时间 ', unreachable: '网页服务连接失败。',
   describe: {start: r => '启动 ' + r + ' mL/min', stop: '停止', dispenseOver: (ml, min) => min + ' 分钟内输送 ' + ml + ' mL', dispense: ml => '输送 ' + ml + ' mL',
     calClear: '清除校准', cal: ml => '校准（实测 ' + ml + ' mL）', query: c => '查询 ' + c,
-    RECORDING_ON: '开始长期记录', RECORDING_OFF: '停止长期记录（只留 12 小时）'},
+    RECORDING_ON: '开始长期记录', RECORDING_OFF: '停止长期记录（只留 12 小时）',
+    'HEAT,ON': '加热器通电（自动控温）', 'HEAT,OFF': '加热器断电（自动控温）', HEATER_AUTO_ON: '打开自动控温', HEATER_AUTO_OFF: '关闭自动控温'},
   rec: {cardEyebrow: '网关 · 数据记录', eyebrow: '数据记录', sensors: '传感器节点', on: '记录中：长期保存', off: '未记录：只留 12 小时',
     note: '每个节点单独记录；每台泵的开关在它自己的卡片上。开启时收到的数据永久保存；关闭时收到的数据 12 小时后自动删除（适合调试）。切换只影响之后收到的数据，已经保存的不会被删。',
     start: '开始长期记录', stop: '停止记录（只留 12 小时）', confirmOn: '从现在起收到的数据全部长期保存？',
-    confirmOff: '从现在起收到的数据会在 12 小时后自动删除，继续？', done: '已保存。'}
+    confirmOff: '从现在起收到的数据会在 12 小时后自动删除，继续？', done: '已保存。'},
+  heat: {eyebrow: 'NODE 7 · 加热器', title: '加热器（水温控制）', water: '水温（平均）', setpoint: '设定温度',
+    relay: '继电器 CH1', on: '通电', off: '断电', auto: '自动控温', autoOn: '开', autoOff: '关（加热器保持断电）',
+    enable: '打开自动控温', disable: '关闭自动控温', save: '保存温度', setLabel: '设定温度 °C',
+    confirmEnable: t => '水温低于 ' + t + ' °C 时自动加热？', confirmDisable: '关闭自动控温？加热器会断电。',
+    range: (a, b) => '设定温度必须在 ' + a + ' 到 ' + b + ' °C 之间。', needSetpoint: '请先保存设定温度。',
+    rule: h => '水温取 DO 探头和浊度探头温度的平均值；低于设定温度时加热，达到设定 + ' + h + ' °C 时停止。任一探头无数据、过期或两者相差超过 3 °C 都会断电；网关停止重复发送"开"后 60 秒，继电器也会自己断开。继电器状态是节点的控制状态，不是测得的加热功率。',
+    reason: {BELOW_SETPOINT: '低于设定温度：加热中', AT_SETPOINT: '已达到设定温度：断电', HOLD: '在回差范围内：保持当前状态', DISABLED: '自动控温已关闭',
+      NO_SETPOINT: '还没有设定温度', SOURCES_DISAGREE: '两个探头相差超过 3 °C：断电'}, reasonPrefix: {NO_DATA: '没有有效读数：', STALE: '读数过期：', IMPLAUSIBLE: '读数不合理：'},
+    broker: ' · MQTT broker 不可用（继电器会自己断开）'}
 };
 const nameOf = d => EN ? d.name_en || d.name : d.name;
 let user = null, devices = [], busy = false, cards = [];
@@ -76,6 +96,7 @@ function describe(command) {
   if ((m = /^D,([\d.]+)$/.exec(command))) return D.dispense(Number(m[1]));
   if (command === 'Cal,clear') return D.calClear;
   if ((m = /^Cal,([\d.]+)$/.exec(command))) return D.cal(Number(m[1]));
+  if ((m = /^HEATER_SETPOINT,([\d.]+)$/.exec(command))) return (EN ? 'Set temperature ' : '设定温度 ') + m[1] + ' °C';
   return D[command] || D.query(command);
 }
 function controls() { for (const b of document.querySelectorAll('.device-card button')) b.disabled = busy || !user; }
@@ -156,13 +177,69 @@ function recordSwitch(getNodes) {
   }};
 }
 const pumpNodes = () => devices.filter(d => d.kind === 'pump').map(d => d.node_id);
-const sensorNodes = () => Object.keys(recordingMap).filter(n => !pumpNodes().includes(n));
+const sensorNodes = () => Object.keys(recordingMap).filter(n => !pumpNodes().includes(n) && n !== 'shrimp-node07');
 function sensorRecordingCard() {
   const card = make('article','panel device-card'), names = make('p','muted'), toggle = recordSwitch(sensorNodes);
   card.append(make('p','eyebrow',T.rec.cardEyebrow), make('h2','',T.rec.sensors), names, make('p','muted',T.rec.note), toggle.box);
   return {card, update() { names.textContent = sensorNodes().map(n => (nodeInfo[n] || {}).name || n).join(' · '); toggle.update(); }};
 }
 const recorder = sensorRecordingCard();
+// Node 7 heater: thermostat settings are stored on the gateway (heater_ctl.py); the decision runs there every 10 s.
+function heaterCard() {
+  const H = T.heat, card = make('article','panel device-card'), head = make('div','panel-head'), title = make('div'), badge = make('span','badge','…');
+  title.append(make('p','eyebrow',H.eyebrow), make('h2','',H.title)); head.append(title, badge);
+  const water = metric(H.water), target = metric(H.setpoint), relay = metric(H.relay), metrics = make('div','metrics');
+  metrics.append(water.box, target.box, relay.box);
+  const form = make('form','pump-control'), fieldsBox = make('div','pump-fields one'), label = make('label','',H.setLabel), input = make('input');
+  Object.assign(input, {type:'number', step:'0.1', value:'15'}); label.append(input); fieldsBox.append(label);
+  const buttons = make('div','pump-buttons'), save = make('button','',H.save), toggleAuto = make('button','');
+  save.type = 'submit'; toggleAuto.type = 'button'; buttons.append(save, toggleAuto);
+  const reason = make('p','muted'), message = make('p','pump-message'); message.setAttribute('role','status');
+  const rule = make('p','muted'), toggle = recordSwitch(() => ['shrimp-node07']);
+  form.append(fieldsBox, buttons, reason, message);
+  card.append(head, metrics, rule, form, toggle.box);
+  let state = {}, edited = false;
+  input.addEventListener('input', () => { edited = true; });
+  async function send(body) {
+    if (busy || !user) return;
+    busy = true; controls();
+    try {
+      const {status, data} = await api('/api/heater', body);
+      if (status === 401) { await checkSession(); return; }
+      message.textContent = status === 200 ? T.rec.done : T.result[data.error] || data.error || T.failed;
+      if (status === 200) edited = false;
+    } catch (error) { message.textContent = T.failed; }
+    finally { busy = false; controls(); refresh().catch(() => {}); }
+  }
+  form.addEventListener('submit', event => {
+    event.preventDefault();
+    const [low, high] = state.setpoint_range_C || [5, 32], value = Number(input.value);
+    if (!(value >= low && value <= high)) { message.textContent = H.range(low, high); return; }
+    send({setpoint: value});
+  });
+  toggleAuto.addEventListener('click', () => {
+    if (!state.enabled && state.setpoint_C == null) { message.textContent = H.needSetpoint; return; }
+    if (confirm(state.enabled ? H.confirmDisable : H.confirmEnable(state.setpoint_C))) send({enabled: !state.enabled});
+  });
+  return {card, update(heater, rows) {
+    if (!heater) return;
+    state = heater;
+    const relayRow = rows.find(r => r.sensor_id === 'HEATER_RELAY' && r.parameter === 'relay_on'), stale = !relayRow || relayRow.stale;
+    const sources = Object.entries(heater.sources || {}).map(([s, v]) => s.split('_')[0] + ' ' + Number(v).toFixed(1)).join(' · ');
+    water.set(heater.temperature_C == null ? '—' : heater.temperature_C.toFixed(2), '°C', sources || T.waiting);
+    target.set(heater.setpoint_C == null ? '—' : Number(heater.setpoint_C).toFixed(1), '°C', H.auto + (EN ? ': ' : '：') + (heater.enabled ? H.autoOn : H.autoOff));
+    relay.set(relayRow && relayRow.value !== null ? (relayRow.value ? H.on : H.off) : '—', '', stale ? T.noData : '');
+    if (!edited && heater.setpoint_C != null) input.value = heater.setpoint_C;
+    const [low, high] = heater.setpoint_range_C || [5, 32]; input.min = low; input.max = high;
+    const [kind, sensor] = String(heater.reason || '').split(':');
+    reason.textContent = (sensor ? (H.reasonPrefix[kind] || kind) + sensor : H.reason[kind] || kind) + (heater.error ? H.broker : '');
+    rule.textContent = H.rule(heater.hysteresis_C);
+    toggleAuto.textContent = heater.enabled ? H.disable : H.enable; toggleAuto.className = heater.enabled ? 'stop' : '';
+    badge.className = 'badge' + (heater.heat ? ' live' : ' warn'); badge.textContent = heater.heat ? H.on : H.off;
+    toggle.update();
+  }};
+}
+const heaterBox = heaterCard();
 const builders = {pump: pumpCard};
 async function checkSession() {
   const {data} = await api('/api/session');
@@ -176,7 +253,7 @@ async function checkSession() {
   const list = Array.isArray(data.devices) ? data.devices : [];
   if (JSON.stringify(list.map(d => d.id)) !== JSON.stringify(devices.map(d => d.id))) {
     devices = list; cards = devices.map((d, i) => (builders[d.kind] || (() => null))(d, i)).filter(Boolean);
-    $('devices').replaceChildren(recorder.card, ...cards.map(c => c.card));
+    $('devices').replaceChildren(recorder.card, ...cards.map(c => c.card), heaterBox.card);
     $('deviceCount').textContent = T.count(cards.length);
   }
   controls();
@@ -190,6 +267,8 @@ async function refresh() {
   if (status.data.recording && typeof status.data.recording === 'object') { recordingMap = status.data.recording; nodeInfo = status.data.nodes || {}; }
   for (const c of cards) c.update(rows);
   recorder.update();
+  heaterBox.update(status.data.heater, rows);
+  heaterBox.card.hidden = !status.data.heater;
   const byId = Object.fromEntries(devices.map(d => [d.id, d])), body = $('events'); body.replaceChildren();
   for (const e of (Array.isArray(events.data) ? events.data : [])) {
     const tr = make('tr'), device = byId[e.device_id] || devices.find(d => d.node_id === e.node_id);

@@ -1404,6 +1404,24 @@ Decision:
 4. Data integrity: deleting debug data is the user's explicit retention choice, recorded here and in `operator_event`. Kept data still preserves raw lines, sequence numbers and QC.
 5. Risk: when the switch is off, a whole debugging session older than 12 hours is gone and cannot be recovered. There is still no backup of kept data.
 
+# DECISION 052 — Heater Node and Gateway Thermostat (Node-7 = shrimp-node07)
+
+Date accepted: 2026-10-12, by the user (direct instruction: a new ESP32 drives a two-channel IoT AC power relay to control water temperature; water temperature = mean of the DO-probe and turbidity-probe temperatures; the set temperature is adjustable on the control page; heating starts below it; an operator switch must be on for automatic control; the heater is plugged into the CH1 normally-OFF outlet).
+
+Status:
+
+- Node allocation, GPIO5 → relay CH1 control input, gateway-side thermostat: LOCKED for the lab bench
+- Relay and heater models and ratings; whether the relay's control input accepts 3.3 V: NOT VERIFIED
+- This is the project's first water-quality-driven closed-loop control. SPEC §0.2 still says the control page is not closed-loop; SPEC not changed — revise it if this becomes part of the formal system
+
+Decision:
+
+1. Lab folder `lab_scale/Node-7/`, firmware `shrimp-node07` (`node07-heater-mqtt-0.1`), sensor id `HEATER_RELAY` (parameter `relay_on` = the node's relay command state, not measured heater power).
+2. The decision runs on the gateway (`jetson_web/heater_ctl.py`, inside `server.py --pump-control`) every 10 s: mean of `DO_SEN0681/temperature_C` and `TURB_SEN0710/temperature_C`; ON below the set temperature, OFF at set + 0.5 °C; set temperature 5–32 °C; nothing happens unless the operator switch "automatic control" is on, and it cannot be switched on before a set temperature exists.
+3. Fail-safe OFF on: switch off, no set temperature, a missing / non-OK QC / older than 30 s / outside 0–40 °C source, or the two sources more than 3 °C apart. While ON the gateway repeats `HEAT,ON` every 20 s; the node opens the relay by itself 60 s after the last `HEAT,ON`, at boot and on a wrong board. The heater is on the normally-OFF outlet, so loss of the control signal or of ESP32 power means no heater power.
+4. Commands use the pumps' envelope on `shrimp/lab/shrimp-node07/cmd`, writable only by `pump-operator`; the node accepts only `HEAT,ON` / `HEAT,OFF`. Every heater switch, set-temperature change and operator-switch change is logged in `operator_event`.
+5. Risks: the turbidity probe's temperature channel has no documented accuracy (DECISION 050 did not treat it as water temperature) — included by user choice, with the 3 °C disagreement guard; mains + water: a GFCI outlet and the heater's own thermostat set as an independent upper limit are recommended; the heater must be submerged before power; the website's "powered" state does not prove heating. Test with a lamp first (switching and the 60 s dead-man) before connecting the heater.
+
 ---
 
 # Current Critical Open Decisions

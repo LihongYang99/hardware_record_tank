@@ -94,3 +94,8 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 首次导出 55 个文件、700,695 行、231 MB，与数据库逐行核对无遗漏、无重复。CSV 加入 `.gitignore`，只提交文件夹结构（`.gitkeep`）和 README。
 - 每个泵也有独立的数据记录开关（DECISION 051 更新）。测试 23 项通过。
 - 同日：相机（台架称 Node 3）每分钟存一帧 JPEG 到 `Raw_data/Node-3-Camera/<UTC 日期>/`，约 51 MB/天，JPEG 不进 Git；测试 24 项通过。
+
+# 2026-10-12 — 新增 Node-7 加热器与网关自动控温（DECISION 052）
+
+- 新目录 `lab_scale/Node-7/`（README、WIRING、HARDWARE、COMMUNICATION、PROGRESS、`script/HEATER_MQTT/`、`tests/`）；`Telemetry.h`/`BenchLog.h` 取自 pump-node-1，逐字节相同。
+- 网关新增 `heater_ctl.py` 控温线程、`/api/heater`、控制页加热器卡片、监控页面板、`Raw_data/Node-7-Heater/`。DO 与浊度探头温度平均，回差 0.5 °C，数据不可信即断电，节点 60 s 收不到"开"自动断电。测试 28 项通过；broker 账号已生成；尚未读 MAC、未烧录。
