@@ -60,13 +60,99 @@
 
 ## 3. 编译与烧录
 
-当前板上程序是 MQTT 版本：Node-1 `Node-1/script/DO_ORP_MQTT/`，Node-2 `Node-2/script/Atlas_EC_pH_MQTT/`；泵 1 程序 `pump-node-1/script/PMP_MQTT/`（`--node 4`，0.2 已烧录）；泵 2 程序 `pump-node-2/script/PMP_MQTT/`（`--node 5`，与泵 1 共用头文件，待烧录）。旧版 `DO_ORP_WiFi/`、`Atlas_EC_pH_UART/`（仅 USB 串口）保留作回退。
+### 板上程序
 
-1. 保留整个 sketch 文件夹，所有 `.h` 都参与同一次编译，不单独上传。
-2. 本地配置（仓库根目录）：`python3 lab_scale/jetson_web/configure_node1.py --node 1`（或 `--node 2|4|5|6|7 --wifi-from-node1`）生成 `arduino_secrets.h`。Wi-Fi 必须是实验室路由器的 **2.4 GHz** 网络。真实密码文件禁止提交。
-3. 编译：`python3 lab_scale/jetson_web/build_node1.py --node 1|2|4|5|6|7`（只编译不烧录）。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
-4. 烧录前核对 `/dev/serial/by-id/` 中的 MAC 与目标节点一致，并先回读 flash 备份（见各固件 README）。固件启动时也会检查出厂 MAC，不符就不运行传感器。
-5. USB Serial 115200 仍输出同样的日志行；拔掉 USB 不影响 MQTT 发送，但板子需要其他 5 V 供电。
+| 节点 | `--node` | sketch | 板上版本 |
+|---|---|---|---|
+| Node-1 | 1 | `Node-1/script/DO_ORP_MQTT/` | node01-mqtt-0.1 |
+| Node-2 | 2 | `Node-2/script/Atlas_EC_pH_MQTT/` | node02-mqtt-0.1 |
+| 泵 1 | 4 | `pump-node-1/script/PMP_MQTT/` | node04-pump-mqtt-0.2 |
+| 泵 2 | 5 | `pump-node-2/script/PMP_MQTT/` | node05-pump-mqtt-0.2 |
+| Node-6 | 6 | `Node-6/script/TURB_MQTT/` | node06-mqtt-0.1 |
+| Node-7 | 7 | `Node-7/script/HEATER_MQTT/` | node07-heater-mqtt-0.1 |
+
+旧版 `DO_ORP_WiFi/`、`Atlas_EC_pH_UART/`（仅 USB 串口）保留作回退。保留整个 sketch 文件夹，所有 `.h` 一起编译。板设置：ESP32S3 Dev Module；16 MB Flash；QIO；OPI PSRAM；Hardware CDC and JTAG；USB CDC On Boot Enabled；core 3.3.11；MQTT 库 2.5.2。
+
+### 烧录一块新板子的完整流程
+
+这是 2026-09-26 至 10-12 实际烧录 6 块板子（Node 1、2、泵 1、泵 2、Node 6、Node 7）总结出来的顺序。所有命令在 Jetson 终端、仓库根目录运行。**Claude 不直接操作硬件**：读 MAC、备份、烧录都由用户执行，Claude 核对输出后再给下一步。
+
+**准备（Claude 做，不需要板子）**
+
+1. 建节点文件夹：README / HARDWARE / WIRING / COMMUNICATION / PROGRESS、`script/<SKETCH>/`、`tests/`，固件里 `NODE_MAC` 先写全零（全零时固件什么都不做）。
+2. 网关加节点：`server.py` 的 `NODES`/`SENSORS`、`mqtt_receiver.py`、`prepare_mqtt.py`（需要命令的节点加进 `COMMAND_NODES`）、`configure_node1.py`/`build_node1.py`、`export_raw.py`、两个监控页面板。跑测试。
+3. `python3 lab_scale/jetson_web/build_node1.py --node N --check`（空凭据编译检查，**这个产物不能烧录**）。
+4. `python3 lab_scale/jetson_web/prepare_mqtt.py --host 192.168.88.249`：补新节点的 broker 账号和 ACL，已有账号密码不变（它们已经烧在各节点里）。
+5. `python3 lab_scale/jetson_web/configure_node1.py --node N --wifi-from-node1`：生成本地 `arduino_secrets.h`（Git 忽略，密码不显示）。
+
+**第 1 步：读 MAC（用户）**
+
+```bash
+ls -l /dev/serial/by-id/
+.codex-build/arduino-data/packages/esp32/tools/esptool_py/5.3.1/esptool --chip esp32s3 --port /dev/ttyACM0 flash-id
+```
+
+- 新板子跑的是出厂演示程序，设备名是 `Espressif_Device_123456`（USB ID `303a:4001`），esptool 会报 `No serial data received`。**先手动进下载模式：按住 BOOT，按一下 RST，松开 RST，再松开 BOOT**；成功后设备名变成 `…USB_JTAG_serial_debug_unit_<MAC>`。
+- 核对：ESP32-S3、16 MB flash、MAC 与已有节点都不同（Node 1 `44:B1:76:CE:D1:A8` 与 Node 6 `44:B1:76:CE:D8:6C` 只差后两段，要逐位看）。
+- esptool 结束时会让板子复位回出厂程序，**下一步之前要再按一次 BOOT + RST**。
+- 泵 1 那块板子当时插的是板上的 COM/UART 口（CH343 芯片），esptool 能自动进下载模式，不用按键。
+
+**第 2 步：回读整片 flash 备份（用户，约 8 分钟）**
+
+```bash
+PORT=/dev/ttyACM0
+mkdir -p .codex-build/nodeN-backup && cd .codex-build/nodeN-backup
+for i in $(seq 0 15); do ../arduino-data/packages/esp32/tools/esptool_py/5.3.1/esptool --chip esp32s3 --port $PORT --no-stub read-flash $((i*0x100000)) 0x100000 part$i.bin || break; done
+ls part*.bin | wc -l                 # 必须是 16，少了说明中途失败，不要继续
+```
+
+```bash
+# 只运行一次，而且终端必须还在 nodeN-backup 目录里
+STAMP=$(date -u +%Y%m%dT%H%M%SZ); cat $(for i in $(seq 0 15); do echo part$i.bin; done) > nodeN-flash-before-$STAMP.bin
+sha256sum nodeN-flash-before-$STAMP.bin | tee nodeN-flash-before-$STAMP.bin.sha256 && rm part*.bin; cd ~/Documents/GitHub/hardware_record_tank
+```
+
+- 用 `--no-stub` 按 1 MB 分块读：stub 模式在 0x6A000 处会稳定中断（Node 1 时发现）。
+- 泵 2 时这段被运行了两次，第二次在仓库根目录报 `No such file`，其实第一次已经成功；Claude 用 `sha256sum -c` 核对了备份，并删掉了误生成的空 `.sha256`。
+- 泵 1、泵 2、Node 6 的出厂镜像 sha256 都是 `d73b6dd5…`：同一批出厂演示程序，flash 里没有每块板自己的数据。
+
+**第 3 步：填 MAC，真实编译（Claude）**
+
+把 MAC 写进 `.ino` 的 `NODE_MAC`，运行 `python3 lab_scale/jetson_web/build_node1.py --node N`，记录大小和 `.bin` 的 sha256。
+
+**第 4 步：重启网关两个服务（用户，必须在烧录之前）**
+
+```bash
+cd ~/Documents/GitHub/hardware_record_tank/lab_scale/jetson_web
+kill "$(cat data/mqtt.pid)" "$(cat data/server.pid)"
+nohup python3 -u run_mqtt.py > data/mqtt.log 2>&1 & echo $! > data/mqtt.pid
+set -a; . ./.env; set +a
+nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 --pump-control > data/server.log 2>&1 & echo $! > data/server.pid
+cd ~/Documents/GitHub/hardware_record_tank
+```
+
+broker 只在启动时读账号：不重启，新节点连上 Wi-Fi 也连不上 MQTT，一条数据都进不来（Node 7 烧完后就是这样）。接收器也要重启才订阅新节点、认识新参数。
+
+**第 5 步：烧录（用户）**
+
+先按 BOOT + RST，`ls -l /dev/serial/by-id/` 确认设备名里的 MAC 就是第 1 步那块，然后：
+
+```bash
+.codex-build/tools/arduino-cli --config-file .codex-build/arduino-cli.yaml upload -p /dev/ttyACM0 --fqbn 'esp32:esp32:esp32s3:FlashSize=16M,FlashMode=qio,PSRAM=opi,USBMode=hwcdc,CDCOnBoot=cdc' --input-dir .codex-build/nodeN-configured/output
+```
+
+**烧完单按一次 RST（不按 BOOT）**。手动进的下载模式，烧录后的自动复位不一定能退出，程序不会运行，USB 上也没有任何输出（泵 2 时遇到，按 RST 后立即启动）。
+
+**第 6 步：核对（Claude）**
+
+- 数据库里出现 `event=BOOT`（MAC 检查通过）、Wi-Fi IP、MQTT online，无 `mqtt_rejected`，传感器 / 执行器有正常回复。
+- Jetson ARP 里 IP 对应的 MAC 与板子一致；把 IP 和 MAC 写进 `server.py` 的 `NODES` 和各 README。
+- 在路由器上给这个 MAC 做静态租约（WebFig：IP → DHCP Server → Leases → Make Static）。
+- 换成独立 USB 电源适配器后再核对一次重新上线（程序和配置都在板子里，不需要 Jetson）。
+
+**回退**：`esptool --chip esp32s3 --port $PORT write-flash 0 .codex-build/nodeN-backup/nodeN-flash-before-*.bin`。
+
+USB Serial 115200 也输出同样的日志行；拔掉 USB 不影响 MQTT 发送，但板子需要其他 5 V 供电。
 
 ## 4. 日志字段
 

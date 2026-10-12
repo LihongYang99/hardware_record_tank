@@ -112,7 +112,7 @@ tank_scale/README.md        # 未来实际部署
 
 每块 ESP32 独立上传自己的程序。MQTT 版本的本地配置用 `lab_scale/jetson_web/configure_node1.py --node 1|2|4|5|6|7` 生成
 `arduino_secrets.h`（Wi-Fi 必须是 2.4 GHz；4 = pump-node-1，5 = pump-node-2，6 = 浊度，7 = 加热器），编译用 `build_node1.py --node 1|2|4|5|6|7`；真实密码文件禁止提交。
-烧录前的板上 flash 备份在 `.codex-build/node*-backup/`（不入 Git），回退命令见各固件 README。
+烧录前的板上 flash 备份在 `.codex-build/node*-backup/`（不入 Git）。**烧录一块新板子的完整步骤和踩过的坑**（出厂程序要按 BOOT + RST、备份只运行一次、先重启网关服务再烧录、烧完单按 RST）见 [lab_scale README 第 3 节](lab_scale/README.md#3-编译与烧录)。
 
 完整阶段记录见 [lab_scale README](lab_scale/README.md) 与各节点的 PROGRESS.md。
 正式里程碑仍是 **传感器 → ESP32 → UTC → Wi-Fi/MQTT → Raspberry Pi → 数据库 → Dashboard**。

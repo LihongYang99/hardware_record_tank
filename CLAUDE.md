@@ -10,7 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - Data integrity: preserve raw lines, timestamps, sequence numbers and QC state. Invalid/missing readings are stored as NULL with a QC flag, **never zero**, and never carry over the previous value. Never label a timestamp UTC/SYNCED unless a trusted UTC source actually exists (none exists yet: `UTC=UNSYNCED`, `sample_timestamp_utc` is NULL).
 - Priority order: scientific validity > electrical safety > data integrity > reliability > maintainability > modularity > expandability > cost.
 - Formal milestone: Sensor → ESP32 → UTC → Wi-Fi → MQTT → **Raspberry Pi** → DB → dashboard. The Jetson in `lab_scale/jetson_web` is a *temporary* lab gateway; do not let Jetson/ML work displace the Pi architecture.
-- Never flash an ESP32 without explicit user confirmation of the target board (MAC via `/dev/serial/by-id/`) and a flash read-back backup. `build_node1.py` deliberately has no upload option.
+- Never flash an ESP32 without explicit user confirmation of the target board (MAC via `/dev/serial/by-id/`) and a flash read-back backup. `build_node1.py` deliberately has no upload option. The full per-board procedure (factory demo firmware needs BOOT+RST, `--no-stub` 1 MB backup chunks, restart both gateway services before flashing, press RST after upload) is in `lab_scale/README.md` §3; the user runs every hardware command.
 
 Documentation is mostly Chinese (with `docs/phase1/` in English + `zh-CN/`). `SPEC.md`/`GOAL.md`/`DECISIONS.md` hold the formal design; `lab_scale/` records actual bench state. When they differ, don't treat historical planning docs as current hardware state.
 
