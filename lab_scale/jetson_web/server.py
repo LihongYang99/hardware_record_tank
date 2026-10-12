@@ -25,7 +25,7 @@ NODES = {
     'shrimp-node04': {'name': 'Pump 1 · 泵 1', 'ip': '192.168.88.248', 'mac': '7c:4f:ad:b5:33:38'},
     'shrimp-node05': {'name': 'Pump 2 · 泵 2', 'ip': '192.168.88.247', 'mac': '7c:4f:ad:b5:1c:d4'},
     'shrimp-node06': {'name': 'Node 6 · 浊度', 'ip': '192.168.88.246', 'mac': '44:b1:76:ce:d8:6c'},
-    'shrimp-node07': {'name': 'Node 7 · 加热器', 'ip': None, 'mac': None},
+    'shrimp-node07': {'name': 'Node 7 · 加热器', 'ip': '192.168.88.245', 'mac': '44:1b:f6:fe:73:48'},
 }
 PUMP_PARAMETERS = [('pump_on', '运行状态', ''), ('target_mL_min', '设定流量', 'mL/min'),
                    ('motor_V', '电机电压', 'V'), ('total_volume_mL', '本次上电累计体积', 'mL')]

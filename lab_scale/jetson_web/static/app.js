@@ -8,24 +8,25 @@ const shown = (s,row) => row&&row.value!==null ? (s.parameter==='pump_on' ? (row
 const exportsFor=(node,sensors)=>{const box=make('div','exports');for(const sensor of sensors){box.append(make('span','',sensor));for(const [every,text] of [['60','↓ 每分钟 CSV'],['0','↓ 全部 CSV']]){const a=make('a','button small',text);a.href='/export.csv?sensor='+encodeURIComponent(sensor)+'&every='+every;box.append(a);}}return box;};
 function make(tag, cls, text) { const el=document.createElement(tag); if(cls) el.className=cls; if(text!==undefined) el.textContent=text; return el; }
 function draw() {
+  const s=series[Number($('series').value)||0], temp=s&&s.unit==='°C', L=temp?104:45, tick=v=>temp?v.toFixed(1)+' °C / '+(v*1.8+32).toFixed(1)+' °F':v.toFixed(2);
   const canvas=$('chart'), ratio=window.devicePixelRatio||1, w=canvas.clientWidth, h=220;
   canvas.width=w*ratio; canvas.height=h*ratio;
   const ctx=canvas.getContext('2d'); ctx.scale(ratio,ratio); ctx.clearRect(0,0,w,h);
   const valid=history.filter(r=>r.value!==null&&['OK','UNVALIDATED'].includes(r.qc_flag));
   ctx.font='10px system-ui';ctx.fillStyle='#87958c';ctx.strokeStyle='#e5eae3';
-  for(let i=0;i<4;i++){let y=20+i*52;ctx.beginPath();ctx.moveTo(45,y);ctx.lineTo(w-12,y);ctx.stroke();}
+  for(let i=0;i<4;i++){let y=20+i*52;ctx.beginPath();ctx.moveTo(L,y);ctx.lineTo(w-12,y);ctx.stroke();}
   if(!valid.length){ctx.textAlign='center';ctx.fillText('等待可绘制的真实测量数据',w/2,105);$('chartMessage').textContent=history.length?'现有记录带异常 QC，曲线留空；原始值可导出查看。':'尚无真实历史数据';return;}
   const values=valid.map(r=>r.value), low=Math.min(...values), high=Math.max(...values), pad=(high-low)*0.15||1;
   const min=low-pad,max=high+pad, t0=history[0].received_epoch,t1=history[history.length-1].received_epoch;
-  const x=r=>45+(r.received_epoch-t0)/Math.max(1,t1-t0)*(w-57),y=r=>176-(r.value-min)/(max-min)*156;
-  ctx.textAlign='right';for(let i=0;i<4;i++)ctx.fillText((max-(max-min)*i/3).toFixed(2),39,23+i*52);
+  const x=r=>L+(r.received_epoch-t0)/Math.max(1,t1-t0)*(w-L-12),y=r=>176-(r.value-min)/(max-min)*156;
+  ctx.textAlign='right';for(let i=0;i<4;i++)ctx.fillText(tick(max-(max-min)*i/3),L-6,23+i*52);
   ctx.strokeStyle='#b28a36';ctx.lineWidth=2;let previous=null;
   for(const row of history){
     if(row.value===null||!['OK','UNVALIDATED'].includes(row.qc_flag)){previous=null;continue;}
     if(previous&&row.boot_id===previous.boot_id&&row.sequence_number===previous.sequence_number+1&&row.received_epoch-previous.received_epoch<=15){ctx.beginPath();ctx.moveTo(x(previous),y(previous));ctx.lineTo(x(row),y(row));ctx.stroke();}
     ctx.fillStyle='#b28a36';ctx.beginPath();ctx.arc(x(row),y(row),2,0,Math.PI*2);ctx.fill();previous=row;
   }
-  ctx.fillStyle='#87958c';ctx.textAlign='left';ctx.fillText(new Date(t0*1000).toISOString().slice(11,19),45,207);ctx.textAlign='right';ctx.fillText(new Date(t1*1000).toISOString().slice(11,19)+' UTC',w-12,207);
+  ctx.fillStyle='#87958c';ctx.textAlign='left';ctx.fillText(new Date(t0*1000).toISOString().slice(11,19),L,207);ctx.textAlign='right';ctx.fillText(new Date(t1*1000).toISOString().slice(11,19)+' UTC',w-12,207);
   $('chartMessage').textContent='黄色点线表示记录值，UNVALIDATED 尚未验证；异常、缺测和重启处断开。';
 }
 async function loadHistory(){const s=series[Number($('series').value)||0];if(!s)return;const response=await fetch('/api/history?sensor='+encodeURIComponent(s.sensor)+'&parameter='+encodeURIComponent(s.parameter));if(!response.ok)throw Error('history');history=await response.json();draw();}
@@ -45,7 +46,7 @@ async function refresh(){
       const container=$('metrics-'+node);container.replaceChildren();
       series.filter(s=>s.node===node).forEach(s=>{
         const row=rows.find(r=>r.sensor_id===s.sensor&&r.parameter===s.parameter),box=make('div','metric');
-        box.append(make('div','metric-label',s.label));const reading=make('div','reading',shown(s,row));reading.append(make('span','unit',s.unit));box.append(reading);
+        box.append(make('div','metric-label',s.label));const reading=make('div','reading',shown(s,row));reading.append(make('span','unit',s.unit==='°C'&&row&&row.value!==null?'°C / '+(row.value*1.8+32).toFixed(2)+' °F':s.unit));box.append(reading);
         box.append(make('div','qc',row?(row.stale?'STALE · ':'')+(qcText[row.qc_flag]||row.qc_flag):'等待真实数据'));
         box.append(make('div','source',s.sensor));container.append(box);
       });

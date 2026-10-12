@@ -4,6 +4,9 @@
 // Devices come from /api/session (pump_ctl.DEVICES); each kind has one card builder below.
 const $ = id => document.getElementById(id);
 const EN = document.documentElement.lang === 'en';
+// Temperatures are stored in °C; pages show both. cf = a temperature, df = a temperature difference (no +32).
+const cf = c => Number(c).toFixed(1) + ' °C / ' + (Number(c) * 1.8 + 32).toFixed(1) + ' °F';
+const df = d => Number(d) + ' °C / ' + (Number(d) * 1.8).toFixed(1) + ' °F';
 const T = EN ? {
   result: {OK:'Accepted by the device',ER:'Rejected by the device',PUMP_NOT_READY:'Device not initialised yet, try again shortly',ANOTHER_COMMAND_PENDING:'Previous command still running',
     DUPLICATE_ID:'Duplicate command ignored',NO_REPLY:'No reply from the node (offline?); check the state before retrying',BUSY:'Another web command is running',
@@ -34,12 +37,12 @@ const T = EN ? {
     confirmOff: 'Data received from now on will be deleted after 12 hours. Continue?', done: 'Saved.'},
   heat: {eyebrow: 'NODE 7 · HEATER', title: 'Heater (water temperature control)', water: 'Water temperature (mean)', setpoint: 'Set temperature',
     relay: 'Relay CH1', on: 'Powered', off: 'Off', auto: 'Automatic control', autoOn: 'On', autoOff: 'Off (heater stays off)',
-    enable: 'Turn automatic control on', disable: 'Turn automatic control off', save: 'Save temperature', setLabel: 'Set temperature °C',
-    confirmEnable: t => 'Heat automatically whenever the water is below ' + t + ' °C?', confirmDisable: 'Turn automatic control off? The heater will switch off.',
-    range: (a, b) => 'Set temperature must be between ' + a + ' and ' + b + ' °C.', needSetpoint: 'Save a set temperature first.',
-    rule: h => 'Heats when the mean of the DO probe and turbidity probe temperatures is below the set temperature, stops at set + ' + h + ' °C. Any missing, stale or disagreeing probe (> 3 °C apart) switches the heater off; the relay also opens by itself 60 s after the gateway stops repeating ON. Relay state is the node\u2019s command state, not measured heater power.',
+    enable: 'Turn automatic control on', disable: 'Turn automatic control off', save: 'Save temperature', setLabel: 'Set temperature (°C)',
+    confirmEnable: t => 'Heat automatically whenever the water is below ' + cf(t) + '?', confirmDisable: 'Turn automatic control off? The heater will switch off.',
+    range: (a, b) => 'Set temperature must be between ' + cf(a) + ' and ' + cf(b) + '.', needSetpoint: 'Save a set temperature first.',
+    rule: h => 'Heats when the mean of the DO probe and turbidity probe temperatures is below the set temperature, stops at set + ' + df(h) + '. Any missing, stale or disagreeing probe (more than ' + df(3) + ' apart) switches the heater off; the relay also opens by itself 60 s after the gateway stops repeating ON. Relay state is the node\u2019s command state, not measured heater power.',
     reason: {BELOW_SETPOINT: 'Below set temperature: heating', AT_SETPOINT: 'At set temperature: off', HOLD: 'Within hysteresis: keeping state', DISABLED: 'Automatic control off',
-      NO_SETPOINT: 'No set temperature', SOURCES_DISAGREE: 'Probes disagree by more than 3 °C: off'}, reasonPrefix: {NO_DATA: 'No valid reading from ', STALE: 'Stale reading from ', IMPLAUSIBLE: 'Implausible reading from '},
+      NO_SETPOINT: 'No set temperature', SOURCES_DISAGREE: 'Probes disagree by more than ' + df(3) + ': off'}, reasonPrefix: {NO_DATA: 'No valid reading from ', STALE: 'Stale reading from ', IMPLAUSIBLE: 'Implausible reading from '},
     broker: ' · MQTT broker unavailable (relay will open by itself)'}
 } : {
   result: {OK:'设备已接受',ER:'设备拒绝了这条命令',PUMP_NOT_READY:'设备还没初始化好，稍后再试',ANOTHER_COMMAND_PENDING:'上一条命令还没完成',
@@ -71,12 +74,12 @@ const T = EN ? {
     confirmOff: '从现在起收到的数据会在 12 小时后自动删除，继续？', done: '已保存。'},
   heat: {eyebrow: 'NODE 7 · 加热器', title: '加热器（水温控制）', water: '水温（平均）', setpoint: '设定温度',
     relay: '继电器 CH1', on: '通电', off: '断电', auto: '自动控温', autoOn: '开', autoOff: '关（加热器保持断电）',
-    enable: '打开自动控温', disable: '关闭自动控温', save: '保存温度', setLabel: '设定温度 °C',
-    confirmEnable: t => '水温低于 ' + t + ' °C 时自动加热？', confirmDisable: '关闭自动控温？加热器会断电。',
-    range: (a, b) => '设定温度必须在 ' + a + ' 到 ' + b + ' °C 之间。', needSetpoint: '请先保存设定温度。',
-    rule: h => '水温取 DO 探头和浊度探头温度的平均值；低于设定温度时加热，达到设定 + ' + h + ' °C 时停止。任一探头无数据、过期或两者相差超过 3 °C 都会断电；网关停止重复发送"开"后 60 秒，继电器也会自己断开。继电器状态是节点的控制状态，不是测得的加热功率。',
+    enable: '打开自动控温', disable: '关闭自动控温', save: '保存温度', setLabel: '设定温度（°C）',
+    confirmEnable: t => '水温低于 ' + cf(t) + ' 时自动加热？', confirmDisable: '关闭自动控温？加热器会断电。',
+    range: (a, b) => '设定温度必须在 ' + cf(a) + ' 到 ' + cf(b) + ' 之间。', needSetpoint: '请先保存设定温度。',
+    rule: h => '水温取 DO 探头和浊度探头温度的平均值；低于设定温度时加热，达到设定 + ' + df(h) + ' 时停止。任一探头无数据、过期或两者相差超过 ' + df(3) + ' 都会断电；网关停止重复发送"开"后 60 秒，继电器也会自己断开。继电器状态是节点的控制状态，不是测得的加热功率。',
     reason: {BELOW_SETPOINT: '低于设定温度：加热中', AT_SETPOINT: '已达到设定温度：断电', HOLD: '在回差范围内：保持当前状态', DISABLED: '自动控温已关闭',
-      NO_SETPOINT: '还没有设定温度', SOURCES_DISAGREE: '两个探头相差超过 3 °C：断电'}, reasonPrefix: {NO_DATA: '没有有效读数：', STALE: '读数过期：', IMPLAUSIBLE: '读数不合理：'},
+      NO_SETPOINT: '还没有设定温度', SOURCES_DISAGREE: '两个探头相差超过 ' + df(3) + '：断电'}, reasonPrefix: {NO_DATA: '没有有效读数：', STALE: '读数过期：', IMPLAUSIBLE: '读数不合理：'},
     broker: ' · MQTT broker 不可用（继电器会自己断开）'}
 };
 const nameOf = d => EN ? d.name_en || d.name : d.name;
@@ -96,7 +99,7 @@ function describe(command) {
   if ((m = /^D,([\d.]+)$/.exec(command))) return D.dispense(Number(m[1]));
   if (command === 'Cal,clear') return D.calClear;
   if ((m = /^Cal,([\d.]+)$/.exec(command))) return D.cal(Number(m[1]));
-  if ((m = /^HEATER_SETPOINT,([\d.]+)$/.exec(command))) return (EN ? 'Set temperature ' : '设定温度 ') + m[1] + ' °C';
+  if ((m = /^HEATER_SETPOINT,([\d.]+)$/.exec(command))) return (EN ? 'Set temperature ' : '设定温度 ') + cf(m[1]);
   return D[command] || D.query(command);
 }
 function controls() { for (const b of document.querySelectorAll('.device-card button')) b.disabled = busy || !user; }
@@ -191,7 +194,9 @@ function heaterCard() {
   const water = metric(H.water), target = metric(H.setpoint), relay = metric(H.relay), metrics = make('div','metrics');
   metrics.append(water.box, target.box, relay.box);
   const form = make('form','pump-control'), fieldsBox = make('div','pump-fields one'), label = make('label','',H.setLabel), input = make('input');
-  Object.assign(input, {type:'number', step:'0.1', value:'15'}); label.append(input); fieldsBox.append(label);
+  Object.assign(input, {type:'number', step:'0.1', value:'15'}); const fahrenheit = make('span','muted');
+  const showF = () => { fahrenheit.textContent = input.value === '' ? '' : '= ' + cf(input.value); };
+  label.append(input, fahrenheit); fieldsBox.append(label);
   const buttons = make('div','pump-buttons'), save = make('button','',H.save), toggleAuto = make('button','');
   save.type = 'submit'; toggleAuto.type = 'button'; buttons.append(save, toggleAuto);
   const reason = make('p','muted'), message = make('p','pump-message'); message.setAttribute('role','status');
@@ -199,7 +204,7 @@ function heaterCard() {
   form.append(fieldsBox, buttons, reason, message);
   card.append(head, metrics, rule, form, toggle.box);
   let state = {}, edited = false;
-  input.addEventListener('input', () => { edited = true; });
+  input.addEventListener('input', () => { edited = true; showF(); });
   async function send(body) {
     if (busy || !user) return;
     busy = true; controls();
@@ -225,11 +230,12 @@ function heaterCard() {
     if (!heater) return;
     state = heater;
     const relayRow = rows.find(r => r.sensor_id === 'HEATER_RELAY' && r.parameter === 'relay_on'), stale = !relayRow || relayRow.stale;
-    const sources = Object.entries(heater.sources || {}).map(([s, v]) => s.split('_')[0] + ' ' + Number(v).toFixed(1)).join(' · ');
-    water.set(heater.temperature_C == null ? '—' : heater.temperature_C.toFixed(2), '°C', sources || T.waiting);
-    target.set(heater.setpoint_C == null ? '—' : Number(heater.setpoint_C).toFixed(1), '°C', H.auto + (EN ? ': ' : '：') + (heater.enabled ? H.autoOn : H.autoOff));
+    const sources = Object.entries(heater.sources || {}).map(([s, v]) => s.split('_')[0] + ' ' + cf(v)).join(' · ');
+    water.set(heater.temperature_C == null ? '—' : heater.temperature_C.toFixed(2), heater.temperature_C == null ? '°C' : '°C / ' + (heater.temperature_C * 1.8 + 32).toFixed(2) + ' °F', sources || T.waiting);
+    target.set(heater.setpoint_C == null ? '—' : Number(heater.setpoint_C).toFixed(1), heater.setpoint_C == null ? '°C' : '°C / ' + (heater.setpoint_C * 1.8 + 32).toFixed(1) + ' °F', H.auto + (EN ? ': ' : '：') + (heater.enabled ? H.autoOn : H.autoOff));
     relay.set(relayRow && relayRow.value !== null ? (relayRow.value ? H.on : H.off) : '—', '', stale ? T.noData : '');
     if (!edited && heater.setpoint_C != null) input.value = heater.setpoint_C;
+    showF();
     const [low, high] = heater.setpoint_range_C || [5, 32]; input.min = low; input.max = high;
     const [kind, sensor] = String(heater.reason || '').split(':');
     reason.textContent = (sensor ? (H.reasonPrefix[kind] || kind) + sensor : H.reason[kind] || kind) + (heater.error ? H.broker : '');

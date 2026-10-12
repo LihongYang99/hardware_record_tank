@@ -18,7 +18,7 @@ Telemetry telemetry;
 BenchLog benchLog;
 #include "HeaterLogic.h"
 // Factory MAC of the Node 7 ESP32, read with esptool before flashing. All zeros never drives the relay.
-const uint8_t NODE_MAC[6]={0,0,0,0,0,0};
+const uint8_t NODE_MAC[6]={0x44,0x1B,0xF6,0xFE,0x73,0x48}; // esptool flash-id, 2026-10-12
 const int RELAY_CH1=5;                         // not a strapping pin; HIGH = relay CH1 energised = heater outlet on
 const uint32_t POLL_MS=4000, HOLD_MS=60000;    // gateway repeats HEAT,ON every 20 s; 60 s without it -> OFF
 bool correctBoard=false, relayOn=false;

@@ -2,7 +2,8 @@
 
 ## 身份
 
-- 固件标识：`shrimp-node07`；单独一块 ESP32-S3。MAC、IP：待 esptool 读取 / 首次联网后记录。
+- 固件标识：`shrimp-node07`；单独一块 ESP32-S3（esptool 2026-10-12：QFN56 rev v0.2，内置 8 MB PSRAM，16 MB flash）。
+- MAC：`44:1B:F6:FE:73:48`（已写入固件 `NODE_MAC`）。IP：`192.168.88.245`（2026-10-12 Jetson ARP，DHCP；需要在路由器上做静态租约）。
 - 执行器：双路 IoT 交流电源继电器（Two-Channel Control IoT AC Power Relay Module），加热器插在 **CH1 的常断（normally OFF）插座**。具体型号未记录（NOT VERIFIED）。
 - 数据库传感器编号 `HEATER_RELAY`（参数 `relay_on`）；控制页卡片"加热器"。决策记录 DECISION 052。
 

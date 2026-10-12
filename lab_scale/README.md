@@ -34,7 +34,7 @@
 | [pump-node-1](pump-node-1/README.md) | shrimp-node04（总 Node 4） | Atlas EZO-PMP 旁路蠕动泵，UART 直连单独 ESP32 | 192.168.88.248 | 7C:4F:AD:B5:33:38 |
 | [pump-node-2](pump-node-2/README.md) | shrimp-node05（总 Node 5，泵 2） | Atlas EZO-PMP 第二个旁路泵（暂定），与泵 1 同接线、同代码 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 |
 | [Node-6](Node-6/README.md) | shrimp-node06 | DFRobot SEN0710 浊度，RS485 Modbus，单独 ESP32 | 192.168.88.246 | 44:B1:76:CE:D8:6C |
-| [Node-7](Node-7/README.md) | shrimp-node07 | 双路 IoT 交流继电器 CH1 控制加热器（网关自动控温，DECISION 052） | 待联网 | 待 esptool 读取 |
+| [Node-7](Node-7/README.md) | shrimp-node07 | 双路 IoT 交流继电器 CH1 控制加热器（网关自动控温，DECISION 052） | 192.168.88.245 | 44:1B:F6:FE:73:48 |
 | [camera_node](camera_node/README.md) | ONVIF name `NVT` | 水下 IP 相机（有线接路由器） | 192.168.1.88 | 00:12:34:C6:67:04 |
 | [jetson_web](jetson_web/README.md) | Jetson Orin Nano（临时网关） | MQTT broker、数据库、网页 | 有线 192.168.88.249 + 临时 192.168.1.200；学校 Wi-Fi 10.141.48.128（会变） | 4C:BB:47:62:1F:66 |
 

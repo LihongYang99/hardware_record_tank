@@ -12,7 +12,7 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 
 - **网关服务没在运行**：2026-10-11 07:10 EDT 起停机（当天 07:55 重启）；10-12 10:50 重新启动服务，1 分钟后 10:51 Jetson 又正常关机重启（日志是正常关机，不是死机或断电），服务没有自动启动，8080/1883 无程序监听，相机临时地址 192.168.1.200 也没了。最后一条数据 10:51:31，之后约 6.5 小时没有保存。重启命令见 [jetson_web README](lab_scale/jetson_web/README.md#2026-10-12jetson-重启后网页打不开)。
 - **Node 1、Node 2、Node 6 的"长期记录"关着**（用户 2026-10-06 17:43 EDT 在控制页关闭，调试数据不保留）：这三个节点的数据只留 12 小时，按设计自动删除。泵 1、泵 2 一直在长期记录。需要正式记录时在控制页打开。`Raw_data/` 里的部分旧文件也是用户自己删除的。
-- **Node 2 的 pH**：2026-10-06 17:16 EDT 起不回复（`REPLY_TIMEOUT`，EC 正常）；用户 2026-10-12 报告已恢复，网关服务启动后核对。
+- **Node 2 的 pH**：2026-10-06 17:16 EDT 起不回复（`REPLY_TIMEOUT`，EC 正常）；2026-10-12 用户处理后恢复，数据已确认（17:24 EDT 起正常读数）。
 - **Node 6 浊度读数是 1000 NTU（满量程）**：原因已知，探头戴着保护盖，用户正在自行调试，不是故障。
 
 **新增功能（2026-10-06）**：控制页按节点的"数据记录"开关（关闭时只留 12 小时，DECISION 051）；监控页每个传感器可单独导出 CSV（默认每分钟一条真实样本，不平均）；原始日志按节点 / 传感器 / 日期导出到 [Raw_data/](Raw_data/README.md)；相机每分钟存一张 JPEG 到 `Raw_data/Node-3-Camera/`。
@@ -22,11 +22,11 @@ Research-grade real-time aquaculture monitoring: lab-scale integration first, ta
 | 分区 | 设备 | 局域网 IP | 已完成 | 尚未完成 |
 |---|---|---|---|---|
 | [lab_scale / Node-1](lab_scale/Node-1/README.md) | shrimp-node01；ESP32-S3 N16R8；DFRobot SEN0681 DO + SEN0709 ORP | 192.168.88.252 | MQTT 固件已烧录；数据实时进入 Jetson 数据库与网页；断线 25 s 补发无缺口；USB Type-C 电源适配器独立供电 | 校准/验证、UTC、断电持久缓存、长期稳定性 |
-| [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251 | MQTT 固件已烧录；EC、pH 实时进入 Jetson；EC 掉线已重接；USB Type-C 电源适配器独立供电 | pH 10-06 至 10-11 不回复，用户 10-12 报告已恢复（待网关核对）；EC 读数 0（K=1 与 K10 不符）、校准、温度补偿、UTC |
+| [lab_scale / Node-2](lab_scale/Node-2/README.md) | shrimp-node02；ESP32-S3 N16R8；Atlas EZO-EC + EZO-pH、两块 ISCCB-2 | 192.168.88.251 | MQTT 固件已烧录；EC、pH 实时进入 Jetson；EC 掉线已重接；USB Type-C 电源适配器独立供电 | pH 10-06 至 10-11 不回复，10-12 已恢复（数据确认）；EC 读数 0（K=1 与 K10 不符）、校准、温度补偿、UTC |
 | [lab_scale / pump-node-1](lab_scale/pump-node-1/README.md) | **泵 1**；shrimp-node04（总 Node 4）；单独 ESP32-S3；Atlas EZO-PMP 蠕动泵（UART） | 192.168.88.248 | 固件 0.2 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 45.36 mL/min；终端 `pump_ctl.py` 与网页控制页可开关、调流速；每条操作记录操作人和泵回复（DECISION 048）；USB Type-C 电源适配器独立供电，不接 Jetson | 流量计（"运行中"只是控制器报告）、盐水软管兼容性、黑线 GND 与电机负极是否相通、长期运行；45 mL/min 低于 SPEC §29 构想值 |
 | [lab_scale / pump-node-2](lab_scale/pump-node-2/README.md) | **泵 2**；shrimp-node05（总 Node 5）；单独 ESP32-S3；Atlas EZO-PMP（UART），与泵 1 同接线、同代码 | 192.168.88.247 | 2026-09-29 已烧录；两种校准完成（`?CAL,3`），恒定流量上限 49.63 mL/min，复核 9.85 mL；中英文监控页面板、控制页卡片（DECISION 049） | 流量计、盐水软管兼容性；用途暂定第二个旁路泵，SPEC 未改 |
 | [lab_scale / Node-6](lab_scale/Node-6/README.md) | shrimp-node06；ESP32-S3；DFRobot SEN0710 浊度，RS485 Modbus | 192.168.88.246 | 2026-09-29 已烧录，实时进入网页，通信无错误（DECISION 050） | 读数 1000 NTU 满量程是因为探头戴着保护盖（用户调试中）；摘盖入水后的读数待核对；盐水长期浸泡未确认；只报 NTU，不是 eTSS |
-| [lab_scale / Node-7](lab_scale/Node-7/README.md) | shrimp-node07；ESP32-S3；双路 IoT 交流继电器 CH1（常断插座）控制加热器 | 待联网 | 2026-10-12 固件、broker 账号、网关自动控温（DO 与浊度探头温度平均、回差 0.5 °C、断联 60 s 自动断电）、控制页加热器卡片已就绪（DECISION 052） | 控制线接线核对、读 MAC、烧录、先用台灯测试；继电器 / 加热器型号未记录 |
+| [lab_scale / Node-7](lab_scale/Node-7/README.md) | shrimp-node07；ESP32-S3；双路 IoT 交流继电器 CH1（常断插座）控制加热器 | 192.168.88.245 | 2026-10-12 固件、broker 账号、网关自动控温（DO 与浊度探头温度平均、回差 0.5 °C、断联 60 s 自动断电）、控制页加热器卡片已就绪（DECISION 052） | 控制线接线核对、备份、烧录、先用台灯测试；继电器 / 加热器型号未记录 |
 | [lab_scale / camera_node](lab_scale/camera_node/README.md) | Barlus 水下 IP 相机，标签 IPC5MPIR-PBX10 | 192.168.1.88（MAC 已核对） | ONVIF 取得视频地址；子码流 704×576 实时预览进入网页；网页服务运行时每分钟存一张 JPEG（`Raw_data/Node-3-Camera/`，约 51 MB/天；台架称 Node 3） | 录像策略、相机时钟（差约 6 个月）、改默认密码、淡水款不批准目标盐度长期部署 |
 | [lab_scale / jetson_web](lab_scale/jetson_web/README.md) | Jetson Orin Nano，临时网关 | 有线 192.168.88.249（相机另需临时 192.168.1.200） | Mosquitto + 接收器 + SQLite + 中/英文监控页 + 登录控制页；落库后才 ACK；按节点记录开关与 12 小时清理；按传感器 / 每分钟导出；IP 静态租约 | **开机自启**（已 5 次因重启或停机丢数据：09-27、09-30 至 10-06、10-11、10-12 10:51 起）、数据备份、迁移到 Raspberry Pi |
 | [tank_scale](tank_scale/README.md) | 未来实际部署 | 未分配 | 预留独立目录 | 正式部署设计与验收 |
@@ -52,6 +52,7 @@ Jetson 是临时网关，正式架构仍按 SPEC 使用 Raspberry Pi。
 | 泵 1 | shrimp-node04 | 192.168.88.248 | 7C:4F:AD:B5:33:38 | Wi-Fi 2.4 GHz |
 | 泵 2 | shrimp-node05 | 192.168.88.247 | 7C:4F:AD:B5:1C:D4 | Wi-Fi 2.4 GHz |
 | Node 6 · 浊度 | shrimp-node06 | 192.168.88.246 | 44:B1:76:CE:D8:6C | Wi-Fi 2.4 GHz |
+| Node 7 · 加热器 | shrimp-node07 | 192.168.88.245 | 44:1B:F6:FE:73:48 | Wi-Fi 2.4 GHz；**静态租约待设置** |
 | 水下相机 | ONVIF `NVT` | 192.168.1.88 | 00:12:34:C6:67:04 | 有线 PoE；相机内设固定地址，另一网段 |
 | Jetson 相机网段临时地址 | — | 192.168.1.200/24 | 同 Jetson 有线 | 每次重启后 `sudo ip addr add 192.168.1.200/24 dev enP8p1s0` |
 | Jetson 学校 Wi-Fi `wlP1p1s0`（eduroam） | — | 10.141.48.128/23 | — | 学校 DHCP，**会变**；只用于 VPN + SSH 远程访问 |

@@ -9,8 +9,20 @@
 - `prepare_mqtt.py` 已运行：新增 `shrimp-node07`（可读自己的 `cmd`），`pump-operator` 可写 node07 `cmd`；原有账号密码不变。`configure_node1.py --node 7 --wifi-from-node1` 已生成本地配置。
 - Jetson 上的串口：`usb-Espressif_Systems_Espressif_Device_123456-if00`（出厂程序，读 MAC 前要按 BOOT + RST）。
 
+## 2026-10-12 18:06 EDT：读到 MAC，真实编译通过
+
+- 用户按 BOOT + RST 后 `esptool flash-id`：`usb-Espressif_USB_JTAG_serial_debug_unit_44:1B:F6:FE:73:48-if00`；ESP32-S3 (QFN56) rev v0.2，PSRAM 8 MB，flash 16 MB（68/4018），**MAC 44:1b:f6:fe:73:48**，与其他节点都不同。
+- MAC 写入 `NODE_MAC`；`build_node1.py --node 7`：892,579 B（68%），sha256 `4bc0058d…f3ed3846`。
+
+## 2026-10-12 18:23 EDT：备份、烧录完成，Wi-Fi 已连，等待重启网关服务
+
+- 备份：`.codex-build/node7-backup/node7-flash-before-20261012T221921Z.bin`，`sha256sum -c` 通过。
+- 烧录后板子连上实验室 Wi-Fi，Jetson ARP：`192.168.88.245` ↔ `44:1b:f6:fe:73:48`。
+- 网关服务仍是 17:24 EDT 启动的旧进程：broker 没有 `shrimp-node07` 账号、接收器没订阅 node07、控温线程不存在，所以还没有任何 node07 记录。加热器在此期间保持断电（没有 `HEAT,ON`）。需要重启 `run_mqtt.py` 和 `server.py`。
+- `server.py` 写入 node07 的 IP 与 MAC。
+
 ## 待记录
 
 - 继电器与加热器型号、额定值；控制输入电压范围。
-- MAC、IP。
+- 路由器静态租约（IP 192.168.88.245）。
 - 台灯测试结果（自动开关、断联 60 s 自动断电）。
