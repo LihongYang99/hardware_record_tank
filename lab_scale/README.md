@@ -1,6 +1,6 @@
 # lab_scale — 实验室台架
 
-整理日期：2026-09-22；**2026-09-27 更新**：两个节点改为 MQTT 固件，与相机一起接入 Jetson 临时网页（见 [jetson_web](jetson_web/README.md)）；新增泵 1（pump-node-1），已烧录、校准，可在终端或登录控制页（中文 `/control`、英文 `/control/en`）控制；当天的调试过程汇总见 [pump-node-1 README](pump-node-1/README.md#调试过程2026-09-27摘要)。
+整理日期：2026-09-22；**2026-10-12 更新**：五块 ESP32 节点（含泵 2、Node-6 浊度）接入；控制页按节点的数据记录开关、按传感器导出、`Raw_data/` 原始数据文件夹、相机每分钟存图；当前状态与待处理问题见[根目录 README](../README.md#当前进度--current-status--2026-10-12edt)。**2026-09-27**：两个节点改为 MQTT 固件，与相机一起接入 Jetson 临时网页（见 [jetson_web](jetson_web/README.md)）；新增泵 1（pump-node-1），已烧录、校准，可在终端或登录控制页（中文 `/control`、英文 `/control/en`）控制；当天的调试过程汇总见 [pump-node-1 README](pump-node-1/README.md#调试过程2026-09-27摘要)。
 
 ## 方法与原理（台架总览）
 
