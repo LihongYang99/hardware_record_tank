@@ -16,7 +16,7 @@ struct FakeUSB {
 extern FakeUSB Serial;
 class HardwareSerial {
 public:
-  bool ec=true,silent=false,wrongID=false;std::string command;
+  bool ec=true,silent=false,wrongID=false,refuse=false;std::string command,k="10",cal="?CAL,0";
   std::deque<uint8_t> rx;std::vector<std::string> commands;
   void setRxBufferSize(size_t){}
   void begin(int,int,int,int){}
@@ -28,11 +28,24 @@ public:
     if(b!='\r'){command+=char(b);return 1;}
     std::string c=command;command.clear();commands.push_back(c);
     if(silent)return 1;
+    if(refuse&&c!="R"){inject("*ER\r");return 1;}
     if(c=="i")inject(wrongID?"?I,DO,1.0\r":ec?"?I,EC,2.17\r":"?I,pH,2.17\r");
-    else if(c=="K,?")inject("?K,10\r");
+    else if(c=="K,?")inject("?K,"+k+"\r");
     else if(c=="T,?")inject("?T,25.00\r");
-    else if(c=="Cal,?")inject("?CAL,0\r");
+    else if(c=="Cal,?")inject(cal+"\r");
+    else if(c=="Slope,?")inject("?Slope,99.7,100.3,-0.89\r");
     else if(c=="R")inject(ec?"35000.0,22.50\r":"8.123\r");
+    // Minimal EZO behaviour for operator commands: EC knows dry/low/high, pH knows mid/low/high.
+    else if(c=="K,10")k="10.00";
+    else if(c=="Cal,clear")cal="?CAL,0";
+    else if(c.rfind("Cal,",0)==0){
+      bool okEC=c=="Cal,dry"||c.rfind("Cal,low,",0)==0||c.rfind("Cal,high,",0)==0;
+      bool okPH=c.rfind("Cal,mid,",0)==0||c.rfind("Cal,low,",0)==0||c.rfind("Cal,high,",0)==0;
+      if(!(ec?okEC:okPH)){inject("*ER\r");return 1;}
+      if(c.rfind("Cal,mid,",0)==0)cal="?CAL,1";
+      else if(c.rfind("Cal,high,",0)==0)cal=ec?"?CAL,2":"?CAL,3";
+      else if(c.rfind("Cal,low,",0)==0&&!ec)cal="?CAL,2";
+    }
     inject("*OK\r");return 1;
   }
 };

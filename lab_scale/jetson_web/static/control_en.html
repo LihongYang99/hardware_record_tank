@@ -18,8 +18,8 @@
 </section>
 <section id="eventPanel" class="panel" hidden>
 <p class="eyebrow">ACTIVITY LOG</p><h2>Recent actions</h2>
-<div class="events-wrap"><table class="events"><thead><tr><th>Sent (UTC)</th><th>Device</th><th>Operator</th><th>Action</th><th>Result</th><th>Device reply</th></tr></thead><tbody id="events"></tbody></table></div>
-<p class="muted">Terminal actions (including calibration) appear here too. Calibration is done only on the Jetson terminal with <code>pump_ctl.py</code>. You are logged out after 30 minutes without activity.</p>
+<div class="events-wrap"><table class="events"><thead><tr><th>Sent (UTC)</th><th>Device</th><th>Operator</th><th>Action</th><th>Result</th><th>Device reply</th><th>Note</th></tr></thead><tbody id="events"></tbody></table></div>
+<p class="muted">Terminal actions (including calibration) appear here too. Pump calibration is done only on the Jetson terminal with <code>pump_ctl.py</code>; Node 2 EC / pH calibration uses the cards above or <code>ezo_cal.py</code>, and the Note column holds the readings and state before and after. You are logged out after 30 minutes without activity.</p>
 </section>
 <footer><span>Commands reach each node over MQTT; nodes run only whitelisted commands</span><span id="lastUpdate"></span></footer>
 </main>

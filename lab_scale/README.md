@@ -65,7 +65,7 @@
 | 节点 | `--node` | sketch | 板上版本 |
 |---|---|---|---|
 | Node-1 | 1 | `Node-1/script/DO_ORP_MQTT/` | node01-mqtt-0.1 |
-| Node-2 | 2 | `Node-2/script/Atlas_EC_pH_MQTT/` | node02-mqtt-0.1 |
+| Node-2 | 2 | `Node-2/script/Atlas_EC_pH_MQTT/` | node02-mqtt-0.1（仓库里是 0.2 = 校准命令，待烧录，见 [CALIBRATION.md](Node-2/CALIBRATION.md)） |
 | 泵 1 | 4 | `pump-node-1/script/PMP_MQTT/` | node04-pump-mqtt-0.2 |
 | 泵 2 | 5 | `pump-node-2/script/PMP_MQTT/` | node05-pump-mqtt-0.2 |
 | Node-6 | 6 | `Node-6/script/TURB_MQTT/` | node06-mqtt-0.1 |

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Operator control of the pumps (泵 1 = pump-node-1 / shrimp-node04, 泵 2 = pump-node-2 / shrimp-node05) from a Jetson terminal, and the
-login-protected device control page used by server.py --pump-control.
+login-protected device control page used by server.py --pump-control (pumps, and Node 2 EC/pH calibration via ezo_cal.py).
 
 Each call sends one whitelisted command over MQTT (account pump-operator) and waits for the node's
 own OPERATOR_* record in SQLite, so what is printed is what the pump actually answered. The node uses
@@ -32,7 +32,8 @@ from server import OPERATOR_EVENT_DDL, fields, utc
 USERS_FILE = ROOT / 'data' / 'pump_web_users.json'
 # Devices on the control page. A new controllable device needs its own node firmware whitelist, an ACL line
 # for pump-operator on its cmd topic (prepare_mqtt.py COMMAND_NODES) and an entry here; node_id/sensor_id
-# tie the page to the stored data. Only the 'pump' kind exists so far.
+# tie the page to the stored data. Kinds: 'pump' (commands here) and 'ezo' (Node 2 calibration, ezo_cal.py;
+# both EZO circuits share one node and topic, so their commands carry the EC:/PH: prefix).
 DEVICES = {
     'pump1': {'name': '泵 1', 'name_en': 'Pump 1', 'kind': 'pump',
               'description': '旁路蠕动泵 · Atlas EZO-PMP · 泵节点 1（总 Node 4）',
@@ -42,6 +43,13 @@ DEVICES = {
               'description': '第二个旁路泵 · Atlas EZO-PMP · 泵节点 2（总 Node 5）',
               'description_en': 'Second bypass pump · Atlas EZO-PMP · pump node 2 (overall Node 5)',
               'node_id': 'shrimp-node05', 'sensor_id': 'PUMP2_ATLAS_PMP', 'topic': 'shrimp/lab/shrimp-node05/cmd'},
+    'ec': {'name': 'EC / 盐度', 'name_en': 'EC / salinity', 'kind': 'ezo', 'prefix': 'EC',
+           'description': 'Atlas EZO-EC · K 10 探头 · Node 2', 'description_en': 'Atlas EZO-EC · K 10 probe · Node 2',
+           'node_id': 'shrimp-node02', 'sensor_id': 'EC_ATLAS_EZO', 'topic': 'shrimp/lab/shrimp-node02/cmd'},
+    'ph': {'name': 'pH', 'name_en': 'pH', 'kind': 'ezo', 'prefix': 'PH',
+           'description': 'Atlas EZO-pH · Industrial Gen3 pH 探头（无温度）· Node 2',
+           'description_en': 'Atlas EZO-pH · Industrial Gen3 pH probe (no temperature) · Node 2',
+           'node_id': 'shrimp-node02', 'sensor_id': 'PH_ATLAS_EZO', 'topic': 'shrimp/lab/shrimp-node02/cmd'},
 }
 QUERIES = {'state': 'D,?', 'maxrate': 'DC,?', 'cal': 'Cal,?', 'volume': 'TV,?', 'voltage': 'PV,?', 'status': 'Status'}
 
@@ -206,7 +214,7 @@ class WebControl:
         now, out = time.monotonic(), []
         for device_id, d in DEVICES.items():
             cached = self.max_rate.get(device_id, (0.0, None))
-            if now - cached[0] > 60:
+            if d['kind'] == 'pump' and now - cached[0] > 60:
                 value = None
                 try:
                     with sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, timeout=5) as db:
@@ -260,17 +268,18 @@ class WebControl:
             self.sessions.pop(token or '', None)
 
     def events(self, limit=15):
-        ids = {d['node_id']: device_id for device_id, d in DEVICES.items()}
+        ids = {(d['node_id'], d.get('prefix')): device_id for device_id, d in DEVICES.items()}
         try:
             with sqlite3.connect(f'file:{self.db_path}?mode=ro', uri=True, timeout=5) as db:
-                rows = db.execute('SELECT sent_utc, node_id, operator, command, result_line FROM operator_event ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
+                rows = db.execute('SELECT sent_utc, node_id, operator, command, result_line, note FROM operator_event ORDER BY id DESC LIMIT ?', (limit,)).fetchall()
         except sqlite3.Error:
             return []
         out = []
-        for sent, node, operator, command, line in rows:
+        for sent, node, operator, command, line, note in rows:
             f = fields(line or '')
-            out.append({'sent_utc': sent, 'device_id': ids.get(node), 'node_id': node, 'operator': operator, 'command': command,
-                        'result': f.get('result') or line or 'PENDING', 'reply': f.get('reply')})
+            prefix = command.split(':', 1)[0] if ':' in command else None
+            out.append({'sent_utc': sent, 'device_id': ids.get((node, prefix)), 'node_id': node, 'operator': operator, 'command': command,
+                        'result': f.get('result') or line or 'PENDING', 'reply': f.get('reply'), 'note': note})
         return out
 
     def kind(self, device_id):
@@ -293,6 +302,22 @@ class WebControl:
         if not reply:
             return {'result': 'NO_REPLY'}
         return {'result': reply.get('result'), 'reply': reply.get('reply'), 'target_mL_min': reply.get('target_mL_min')}
+
+    def calibrate(self, device_id, action, command, name, note):
+        """One Node 2 EZO step (ezo_cal.run): order checks, the command, and the pre/post calibration record."""
+        import ezo_cal
+        if not self.busy.acquire(blocking=False):
+            return {'result': 'BUSY'}
+        try:
+            db = sqlite3.connect(self.db_path, timeout=15)
+            try:
+                return ezo_cal.run(db, self.conn, device_id, action, command, 'web-' + name, note, self.timeout)
+            finally:
+                db.close()
+        except (OSError, ConnectionError, sqlite3.Error):
+            return {'result': 'BROKER_UNAVAILABLE'}
+        finally:
+            self.busy.release()
 
 
 def main():

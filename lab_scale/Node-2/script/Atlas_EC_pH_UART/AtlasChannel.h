@@ -5,18 +5,32 @@
 extern BenchLog benchLog;
 extern char bootID[17];
 // Each channel has its own UART and independent timeout/state machine.
+// Startup only queries and sets output format. K / calibration writes come only from submit() (operator
+// commands over MQTT, whitelisted in AtlasParse.h), one command at a time, between readings.
 class AtlasChannel {
   HardwareSerial &u; const char *name; bool ec;
-  char line[128]={},data[128]={},cmd[24]={}; size_t used=0;
+  char line[128]={},data[128]={},cmd[32]={}; size_t used=0;
+  char opId[21]={},opName[25]={},opCmd[32]={},recent[4][21]={};
   uint32_t started=0,lastRX=0,waitUntil=0,retryAt=0;
-  bool waiting=false,reading=false,haveData=false,ack=false,badLine=false;
-  int step=-1;
+  bool waiting=false,reading=false,haveData=false,ack=false,badLine=false,opPending=false,opActive=false;
+  int step=-1,recentNext=0;
   double kval=NAN,tc=NAN; char cal[32]="UNKNOWN";
   void event(const char *reason) {
     benchLog.print("node_id=shrimp-node02 boot_id=%s sensor=%s uptime_ms=%lu event=%s seq=%lu cycle=%lu",
       bootID,name,(unsigned long)millis(),reason,(unsigned long)seq,(unsigned long)cycle);
   }
+  void operatorLog(const char *what,const char *id,const char *op,const char *c,const char *result,const char *reply) {
+    benchLog.print("node_id=shrimp-node02 boot_id=%s sensor=%s uptime_ms=%lu event=%s cmd_id=%s operator=%s command=%s result=%s reply=%s",
+      bootID,name,(unsigned long)millis(),what,id,op,c,result,reply);
+  }
+  // A queued or running operator command ends exactly once; after a failure or EZO reset it is cancelled, never run late.
+  void operatorDone(const char *result) {
+    if (!opActive && !opPending) return;
+    operatorLog("OPERATOR_DONE",opId,opName,opCmd,result,opActive && haveData?data:"NONE");
+    opActive=opPending=false;
+  }
   void fail(const char *reason) {
+    operatorDone(reason);
     if (reading) benchLog.print("node_id=shrimp-node02 boot_id=%s sensor=%s seq=%lu cycle=%lu request_uptime_ms=%lu UTC=UNSYNCED COMM=ERROR QC=COMMUNICATION_ERROR reason=%s",
       bootID,name,(unsigned long)seq,(unsigned long)cycle,(unsigned long)started,reason);
     else event(reason);
@@ -67,10 +81,26 @@ class AtlasChannel {
     if (badLine) {if(waiting) fail("INVALID_ASCII_OR_OVERLONG_LINE"); return;}
     line[used]=0;
     if (step<0) return; // startup/recovery drain, never interpret as a measurement
+    if (opActive && waiting && (!strcmp(line,"*OK") || !strcmp(line,"*ER"))) {
+      // *ER = the EZO refused this operator command (e.g. wrong order); the channel itself is fine.
+      // A change re-runs startup, so K, T and Cal,? are re-read before the next reading is labelled.
+      bool ok=line[1]=='O',query=strchr(cmd,'?');
+      waiting=false; waitUntil=millis()+200;
+      operatorDone(!ok?"ER":query && !haveData?"OK_WITHOUT_DATA":"OK");
+      if (ok && !query) {ready=false; step=0;}
+      return;
+    }
     if (!strcmp(line,"*RS") || !strcmp(line,"*RE") || !strcmp(line,"*UV") || !strcmp(line,"*OV") || !strcmp(line,"*ER")) {
       fail(line); return;
     }
     if (!waiting) {event("UNSOLICITED_LINE"); return;}
+    if (opActive) {
+      if (!used) return;
+      if (haveData) fail("MULTIPLE_REPLY_LINES");
+      else if (strpbrk(line," =")) fail("UNEXPECTED_REPLY");
+      else {strcpy(data,line); haveData=true;}
+      return;
+    }
     if (!strcmp(line,"*OK")) ack=true;
     else if (used) {
       if (haveData) {fail("MULTIPLE_REPLY_LINES");return;}
@@ -80,8 +110,17 @@ class AtlasChannel {
     if (ack && (!needsData || haveData)) finish();
   }
 public:
-  bool ready=false; uint32_t seq=0,cycle=0,scheduled=0,sampleRX=0;
+  bool ready=false; uint32_t seq=0,cycle=0,scheduled=0,sampleRX=0,operatorCommands=0;
   AtlasChannel(HardwareSerial &uart,const char *id,bool isEC):u(uart),name(id),ec(isEC){}
+  // Operator command (already split from its MQTT payload). QoS 1 may redeliver, so ids are de-duplicated.
+  void submit(const char *id,const char *op,const char *c) {
+    for (auto &r:recent) if (!strcmp(r,id)) {operatorLog("OPERATOR_REJECTED",id,op,c,"DUPLICATE_ID","NONE"); return;}
+    strcpy(recent[recentNext],id); recentNext=(recentNext+1)%4;
+    const char *refused=!atlasOperatorCommand(c,ec)?"NOT_ALLOWED":!ready?"SENSOR_NOT_READY":(opPending || opActive)?"ANOTHER_COMMAND_PENDING":nullptr;
+    if (refused) {operatorLog("OPERATOR_REJECTED",id,op,c,refused,"NONE"); return;}
+    strcpy(opId,id); strcpy(opName,op); strcpy(opCmd,c); opPending=true;
+    operatorLog("OPERATOR_ACCEPTED",opId,opName,opCmd,"QUEUED","NONE");
+  }
   void begin(int rx,int tx) {
     u.setRxBufferSize(1024);u.begin(9600,SERIAL_8N1,rx,tx);
     retryAt=millis()+2000; // board/EZO startup grace period
@@ -116,7 +155,12 @@ public:
       benchLog.print("sensor=%s event=PARTIAL_LINE raw_hex=%s",name,h);
       used=0;badLine=false;if(waiting) fail("PARTIAL_LINE_TIMEOUT");
     }
-    if (waiting) {if(now-started>=1800) fail("REPLY_TIMEOUT");return;}
+    if (waiting) {if(now-started>=(opActive?3000u:1800u)) fail("REPLY_TIMEOUT");return;}
+    if (opPending && ready && !used && now-lastRX>=200 && (int32_t)(now-waitUntil)>=0) {
+      opPending=false; opActive=true; ++operatorCommands;
+      operatorLog("OPERATOR_COMMAND",opId,opName,opCmd,"SENT","NONE");
+      send(opCmd); return;
+    }
     if (step==-1) {
       if ((int32_t)(now-retryAt)<0) return;
       // Stop factory continuous output, then drain for 2 seconds.
@@ -128,7 +172,7 @@ public:
       step=0;
     }
     if (step<0 || ready || (int32_t)(now-waitUntil)<0) return;
-    // Only output/response settings are changed. No calibration/K/temperature writes.
+    // Only output/response settings are changed here. No calibration/K/temperature writes.
     const char *ecInit[]={"*OK,1","C,0","i","K,?","T,?","Cal,?","O,EC,1","O,TDS,0","O,S,1","O,SG,0"};
     const char *phInit[]={"*OK,1","C,0","i","T,?","Cal,?"};
     int total=ec?10:5;

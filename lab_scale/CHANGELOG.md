@@ -100,3 +100,10 @@ Node-2 IP 记录为用户本次确认的 192.168.88.251，不改固件 DHCP 行�
 - 新目录 `lab_scale/Node-7/`（README、WIRING、HARDWARE、COMMUNICATION、PROGRESS、`script/HEATER_MQTT/`、`tests/`）；`Telemetry.h`/`BenchLog.h` 取自 pump-node-1，逐字节相同。
 - 网关新增 `heater_ctl.py` 控温线程、`/api/heater`、控制页加热器卡片、监控页面板、`Raw_data/Node-7-Heater/`。DO 与浊度探头温度平均，回差 0.5 °C，数据不可信即断电，节点 60 s 收不到"开"自动断电。测试 28 项通过；broker 账号已生成；尚未读 MAC、未烧录。
 - 同日：网页所有温度显示改为 `°C / °F`（数据库与导出仍为 °C）。
+
+# 2026-10-13 — Node-2 EC / pH 校准命令（DECISION 053）
+
+- 固件 `node02-mqtt-0.2`：订阅 `shrimp/lab/shrimp-node02/cmd`，只接受校准白名单（`AtlasParse.h`），每路一次一条、夹在两次读数之间；改动后重新读取 K 与校准状态。`AtlasChannel.h`/`AtlasParse.h` 与回退版 `Atlas_EC_pH_UART` 仍逐字节相同；`Telemetry.h` 改为泵节点那份（逐字节相同）。
+- 网关：新文件 `ezo_cal.py`（终端校准工具，检查顺序并把校准前后数据写进 `operator_event`）、`prepare_mqtt.py` 给 node02 加命令权限、控制页新增 "EC / 盐度" 和 "pH" 两张校准卡片、操作记录新增"备注"列。
+- 步骤说明：[Node-2/CALIBRATION.md](Node-2/CALIBRATION.md)。
+- 验证：网关测试 31 项通过（新增 3 项）、Node-2 主机测试通过（白名单、K,10、EC 三步 / pH 中点、`*ER`、去重、忙、复位取消、超时）、两个 sketch 编译通过（MQTT 914,183 B / 69%）；真实 broker 上由工具生成的 10 条命令都只送到 node02 主题并被固件解析器接受。**尚未烧录**。
