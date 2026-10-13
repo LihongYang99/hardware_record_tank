@@ -18,8 +18,8 @@
 </section>
 <section id="eventPanel" class="panel" hidden>
 <p class="eyebrow">操作记录</p><h2>最近操作</h2>
-<div class="events-wrap"><table class="events"><thead><tr><th>发送时间（UTC）</th><th>设备</th><th>操作人</th><th>操作</th><th>结果</th><th>设备回复</th></tr></thead><tbody id="events"></tbody></table></div>
-<p class="muted">终端操作（包括校准）也显示在这里。校准只能在 Jetson 终端用 <code>pump_ctl.py</code> 完成。30 分钟不操作会自动退出登录。</p>
+<div class="events-wrap"><table class="events"><thead><tr><th>发送时间（UTC）</th><th>设备</th><th>操作人</th><th>操作</th><th>结果</th><th>设备回复</th><th>备注</th></tr></thead><tbody id="events"></tbody></table></div>
+<p class="muted">终端操作（包括校准）也显示在这里。泵的校准只能在 Jetson 终端用 <code>pump_ctl.py</code> 完成；Node 2 的 EC / pH 校准可以用上面的卡片，或终端 <code>ezo_cal.py</code>，备注列是校准前后的读数和状态。30 分钟不操作会自动退出登录。</p>
 </section>
 <footer><span>控制命令经 MQTT 发给对应节点，节点只执行白名单命令</span><span id="lastUpdate"></span></footer>
 </main>

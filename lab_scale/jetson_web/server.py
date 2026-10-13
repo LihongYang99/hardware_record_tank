@@ -462,6 +462,22 @@ def handler_for(store, camera, network, ingest_only=False, pump=None, heater=Non
                 heater.wake.set()  # apply within a moment instead of at the next 10 s step
                 return self.send({'heater': store.settings()})
             device, action = body.get('device'), body.get('action')
+            if isinstance(device, str) and pump.kind(device) == 'ezo':
+                # Node 2 calibration: action = a step (ezo_cal.STEPS) or query:<name>; every change needs a note (SPEC §41).
+                import ezo_cal
+                note = body.get('note', '')
+                try:
+                    if not isinstance(action, str) or not isinstance(note, str) or len(note) > 300:
+                        raise ValueError('Invalid request')
+                    query = action.startswith('query:')
+                    command = ezo_cal.QUERIES[device][action[6:]] if query else ezo_cal.command(device, action, body.get('value'))
+                    if not query and not note.strip():
+                        raise ValueError('Note required')
+                except (ValueError, TypeError, KeyError):
+                    return self.send({'error': 'Invalid request'}, status=400)
+                result = pump.calibrate(device, action, command, user, note.strip() or 'web control page')
+                status = {'BUSY': 409, 'BROKER_UNAVAILABLE': 503, 'NO_REPLY': 504}.get(result['result'], 200)
+                return self.send(dict(result, device=device, command=command), status=status)
             try:
                 if not isinstance(device, str) or pump.kind(device) != 'pump':
                     raise ValueError('Unknown device')

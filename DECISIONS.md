@@ -1422,6 +1422,25 @@ Decision:
 4. Commands use the pumps' envelope on `shrimp/lab/shrimp-node07/cmd`, writable only by `pump-operator`; the node accepts only `HEAT,ON` / `HEAT,OFF`. Every heater switch, set-temperature change and operator-switch change is logged in `operator_event`.
 5. Risks: the turbidity probe's temperature channel has no documented accuracy (DECISION 050 did not treat it as water temperature) — included by user choice, with the 3 °C disagreement guard; mains + water: a GFCI outlet and the heater's own thermostat set as an independent upper limit are recommended; the heater must be submerged before power; the website's "powered" state does not prove heating. Test with a lamp first (switching and the 60 s dead-man) before connecting the heater.
 
+# DECISION 053 — Node-2 EZO Calibration Commands (operator, MQTT)
+
+Date accepted: 2026-10-13, by the user (direct instruction: calibrate Node 2's pH and conductivity; chose "add it to the web page / terminal and flash once" over a temporary serial pass-through or a USB-TTL adapter).
+
+Status:
+
+- Command path, whitelist and records: LOCKED for the lab bench (firmware `node02-mqtt-0.2`, not yet flashed at the time of writing)
+- Calibration standards: not yet purchased (user, 2026-10-13); values and order follow the Atlas EZO-EC (v54) and EZO-pH datasheets
+- Sample-temperature compensation (`T,<n>`) remains unresolved and is deliberately not an operator command; readings stay `COMPENSATION_MISSING`
+
+Decision:
+
+1. Node 2 subscribes to `shrimp/lab/shrimp-node02/cmd` (writable only by `pump-operator`, `prepare_mqtt.py` COMMAND_NODES), using pump-node-1's `Telemetry.h` byte for byte. Payload: the pumps' envelope with a channel prefix, `id=<n> operator=<name> cmd=EC:<command>` or `cmd=PH:<command>`.
+2. Whitelist (`AtlasParse.h` `atlasOperatorCommand`, mirrored by `ezo_cal.py`): EC `K,10`, `Cal,dry`, `Cal,low|high,<10–500000 µS/cm>`, `Cal,<10–500000>`; pH `Cal,mid,<6.5–7.5>`, `Cal,low,<1–6>`, `Cal,high,<8–13>`; both `Cal,clear` and the queries `Cal,?`, `T,?`, `K,?` (EC), `Slope,?` (pH). Everything else (Factory, `T,<n>`, output/baud/protocol/name/lock/sleep, any other K) is refused on the node. Startup still never writes K, calibration or temperature.
+3. One command at a time per channel, between readings; duplicate ids ignored; an EZO reset, timeout or failure cancels a queued/running command (never executed late); `*ER` ends only that command. After an accepted change the channel re-runs its startup queries so `K` and `calibration_reply` on later readings are the EZO's own state.
+4. `AtlasChannel.h`/`AtlasParse.h` stay byte-identical with the `Atlas_EC_pH_UART` rollback sketch, which never calls `submit()` (unchanged acquisition there).
+5. Calibration records (SPEC §41): `operator_event` holds UTC time, operator, sensor (EC:/PH:), command (type + value), the operator's note (standard, lot, solution temperature — required for every change), and pre/post response (reading in the standard before; reading, `Cal,?`, `K,?` / `Slope,?` after). The gateway refuses out-of-order steps before sending: EC needs K=10, then dry before low/single, low before high; pH needs the midpoint first.
+6. Risks: K and the calibration live in the EZO, not in the database, so a replaced or factory-reset circuit silently loses them — the `K`/`calibration_reply` fields on every reading are the check; standards are low-ionic-strength NBS pH buffers, so pH in 15–25 ppt water may carry a junction offset (magnitude NOT VERIFIED) until a reference comparison exists; salinity is computed by the EZO at the 25 °C setting.
+
 ---
 
 # Current Critical Open Decisions

@@ -73,3 +73,10 @@ node_id=shrimp-node02 boot_id=b1d653f3374e3af5 sensor=PH_ATLAS_EZO seq=33 cycle=
 - 2026-10-06 21:16:06Z 之后 pH 不再回复：每次初始化 `*OK,1` 都 `REPLY_TIMEOUT`，节点 `pH_ready=0`，每约 20 s 重试；同一块板上的 EC 一直正常。现象与 2026-09-27 EC 掉线相同（当时是掉了一根线）。到网关停机前（2026-10-11 11:10Z）仍未恢复。
 - 2026-10-12 用户报告 Node 2 已恢复，具体处理未说明。网关服务当时未运行，**尚未从数据核对**；启动服务后看 pH 是否有新的 `COMM=OK` 读数。
 - 2026-10-12 核对：服务 17:24 EDT 重启后 pH 恢复正常读数（到 18:09 EDT 共 675 条非通信错误记录，最新 3.651，`COMPENSATION_MISSING`，仍未校准）。恢复已由数据确认。
+
+## 2026-10-13：校准命令通道（DECISION 053），代码完成，尚未烧录
+
+- 用户要校准 EC 和 pH，选择"加进网页 / 终端，烧录一次"；校准液尚未购买。
+- 固件 `node02-mqtt-0.2`（见 [COMMUNICATION.md](COMMUNICATION.md#操作员校准命令atlas_ec_ph_mqtt-02decision-053)），网关 `ezo_cal.py` 与控制页卡片；步骤见 [CALIBRATION.md](CALIBRATION.md)。
+- 验证：主机测试通过（白名单与格式、K,10 后重新读取状态、EC 干/低/高三步、pH 中点与 `Slope,?`、`*ER` 只结束该命令、去重、忙、EZO 复位取消、操作超时；无命令时启动流程仍不写 K/校准）；编译 914,183 B（69%），静态 RAM 50,220 B；回退版 `Atlas_EC_pH_UART` 也编译通过；网关测试 31 项通过；真实 broker 端到端：工具生成的 10 条命令只送到 node02 主题，均被固件解析器接受，其他节点账号发不进去。
+- 待做：用户部署（prepare_mqtt、重启服务、备份、烧录，见 CALIBRATION.md 第 1 节）；买到校准液后先做 EC 的 `K,10`（解决 `CONFIGURATION_MISMATCH`），再做两路校准并记录验收读数。

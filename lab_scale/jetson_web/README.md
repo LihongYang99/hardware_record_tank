@@ -373,3 +373,12 @@ nohup python3 -u server.py --bind 192.168.88.249 --interface enP8p1s0 --pump-con
 ## 2026-10-12：温度同时显示 °C / °F
 
 用户要求网页上每个温度都写成"摄氏 / 华氏"。数据库、CSV 导出和接口仍然只用 °C；只在网页显示时换算：监控页的温度卡片（如 `24.59 °C / 76.26 °F`）、温度曲线的纵轴、控制页加热器卡片（平均水温、两个探头、设定温度、输入框旁的实时换算、确认框、规则说明、操作记录）。温差只乘 1.8 不加 32（回差 0.5 °C / 0.9 °F，探头相差 3 °C / 5.4 °F）。设定温度仍按 °C 输入。静态文件每次请求都从磁盘读取，刷新浏览器即可，不用重启服务。
+
+## 2026-10-13：Node 2 EC / pH 校准（DECISION 053）
+
+- 新文件 [ezo_cal.py](ezo_cal.py)：终端校准工具，控制页也调用同一套代码。每一步发一条白名单命令到 `shrimp/lab/shrimp-node02/cmd`（`cmd=EC:…` / `cmd=PH:…`，账号 `pump-operator`），等节点自己的 `OPERATOR_DONE`。改设置或校准必须写备注（标准液、批号、液温）；成功后等节点重新初始化（`READY`），再查 `Cal,?` 和 `K,?` / `Slope,?`，把"校准前读数 / 校准后读数与状态"追加到这条命令的 `operator_event.note`（SPEC §41）。
+- 顺序在发送前检查：EC 先 K=10，干校准在低点 / 单点之前，低点在高点之前；pH 先做中点。不合顺序就不发送，返回 `K_NOT_10` / `DRY_FIRST` / `LOW_FIRST` / `MID_FIRST`。
+- `pump_ctl.DEVICES` 新增 `ec`、`ph`（kind `ezo`，同一个节点和主题，用前缀区分）；`POST /api/control {device, action, value, note}`，action 为步骤名或 `query:<cal|k|slope|t>`；`WebControl.calibrate` 与泵命令共用"一次一条"的锁。
+- 控制页新增两张校准卡片：当前读数、最近约 1 分钟（15 个读数）的波动、校准状态与 K、按顺序的步骤按钮、查询、清除；操作记录新增"备注"列。
+- `prepare_mqtt.py`：COMMAND_NODES 加 node02。**需要重新运行 `prepare_mqtt.py --host 192.168.88.249` 并重启两个服务**。
+- 测试 31 项通过（新增：命令与固件白名单一致、顺序检查、被拒的步骤不算完成、校准记录含标准与前后数据、接口校验）。逐步操作见 [Node-2/CALIBRATION.md](../Node-2/CALIBRATION.md)。

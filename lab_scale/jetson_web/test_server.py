@@ -235,6 +235,8 @@ class StoreTests(unittest.TestCase):
         control = pump_ctl.WebControl(self.store.path, None, users)
         sent = []
         control.run = lambda device, command, name: sent.append((device, command, name)) or {'result': 'OK', 'reply': 'NONE', 'target_mL_min': '50.00'}
+        calibrated = []
+        control.calibrate = lambda device, action, command, name, note: calibrated.append((device, action, command, name, note)) or {'result': 'OK', 'reply': 'NONE'}
         server, root = serve(control)
         try:
             self.assertEqual(call(root, '/api/session')[1]['reason'], 'NO_USERS')
@@ -256,7 +258,18 @@ class StoreTests(unittest.TestCase):
             token = cookie.split(';')[0].split('=', 1)[1]
             session = call(root, '/api/session', cookie=token)[1]
             self.assertEqual(session['user'], 'li')
-            self.assertEqual([(d['id'], d['name'], d['kind']) for d in session['devices']], [('pump1', '泵 1', 'pump'), ('pump2', '泵 2', 'pump')])
+            self.assertEqual([(d['id'], d['kind']) for d in session['devices']], [('pump1', 'pump'), ('pump2', 'pump'), ('ec', 'ezo'), ('ph', 'ezo')])
+            # Node 2 calibration: whitelisted steps only, a note for every change, queries need none.
+            for body in ({'device': 'ec', 'action': 'k10'}, {'device': 'ec', 'action': 'k10', 'note': '  '}, {'device': 'ec', 'action': 'low', 'value': 5, 'note': 'x'},
+                         {'device': 'ec', 'action': 'mid', 'value': 7, 'note': 'x'}, {'device': 'ph', 'action': 'mid', 'value': 'nan', 'note': 'x'},
+                         {'device': 'ph', 'action': 'high', 'value': True, 'note': 'x'}, {'device': 'ph', 'action': 'query:k'}, {'device': 'ph', 'action': 'Factory', 'note': 'x'},
+                         {'device': 'ec', 'action': 'k10', 'note': 'x' * 301}, {'device': 'ec', 'action': ['k10'], 'note': 'x'}, {'device': 'ec', 'action': 'clear', 'value': 3, 'note': 'x'}):
+                self.assertEqual(call(root, '/api/control', body, token)[0], 400, body)
+            self.assertEqual(call(root, '/api/control', {'device': 'ec', 'action': 'low', 'value': 12880, 'note': 'Atlas 12880 22.4 C'}, token)[1]['command'], 'Cal,low,12880')
+            self.assertEqual(call(root, '/api/control', {'device': 'ph', 'action': 'mid', 'value': '7', 'note': 'pH 7 buffer'}, token)[1]['command'], 'Cal,mid,7.00')
+            self.assertEqual(call(root, '/api/control', {'device': 'ph', 'action': 'query:slope'}, token)[1]['command'], 'Slope,?')
+            self.assertEqual(calibrated, [('ec', 'low', 'Cal,low,12880', 'li', 'Atlas 12880 22.4 C'), ('ph', 'mid', 'Cal,mid,7.00', 'li', 'pH 7 buffer'),
+                                          ('ph', 'query:slope', 'Slope,?', 'li', 'web control page')])
             self.assertEqual(call(root, '/api/control', {'device': 'pump1', 'action': 'start', 'rate': 50}, token, 'text/plain')[0], 415)
             for body in ({'device': 'pump1', 'action': 'start', 'rate': 500}, {'device': 'pump1', 'action': 'start', 'rate': 'nan'},
                          {'device': 'pump1', 'action': 'dispense'}, {'device': 'pump1', 'action': 'start'},

@@ -1,14 +1,17 @@
 // Lab MQTT variant of Atlas_EC_pH_UART. AtlasChannel.h / AtlasParse.h are byte-identical copies.
 // ESP32-S3 N16R8 bench node02. UART1 EC: RX18 TX17; UART2 pH: RX16 TX15.
 // ISCCB-2 host-side VCC must be 3.3V for this direct GPIO wiring.
-// NO 12V, NO RS485 adapter. No calibration/K/temperature writes. UTC remains UNSYNCED.
+// NO 12V, NO RS485 adapter. UTC remains UNSYNCED. Startup never writes K, calibration or temperature;
+// only whitelisted operator commands from ezo_cal.py (MQTT account pump-operator, topic .../cmd) can.
+// Telemetry.h is a byte-identical copy of pump-node-1's (command topic support).
 #include <Arduino.h>
 #include <WiFi.h>
 #include <esp_system.h>
 #include <esp_mac.h>
 #include "arduino_secrets.h"
 #define TELEMETRY_NODE "shrimp-node02"
-#define TELEMETRY_FIRMWARE "node02-mqtt-0.1"
+#define TELEMETRY_FIRMWARE "node02-mqtt-0.2"
+#define TELEMETRY_COMMAND_TOPIC "shrimp/lab/" TELEMETRY_NODE "/cmd"
 #include "Telemetry.h"
 Telemetry telemetry;
 #include "BenchLog.h"
@@ -21,6 +24,15 @@ const uint32_t POLL_MS=4000; // bench request cadence, not physical response tim
 uint32_t lastCycle=0,cycle=0,lastHealth=0,lastRetry=0,lastWiFiPrint=0;
 int previousWiFi=-999;
 bool correctBoard=false;
+// "id=<n> operator=<name> cmd=EC:<command>" or "cmd=PH:<command>"; each channel checks its own whitelist.
+void route(const char *payload) {
+  char id[21]={},op[25]={},c[32]={}; bool isEC=false;
+  if(atlasOperatorPayload(payload,id,op,isEC,c)) {(isEC?ec:ph).submit(id,op,c); return;}
+  char hex[257]; size_t n=strlen(payload); if(n>128) n=128;
+  for(size_t i=0;i<n;++i) snprintf(hex+2*i,3,"%02X",(uint8_t)payload[i]);
+  hex[2*n]=0;
+  benchLog.print("node_id=shrimp-node02 boot_id=%s uptime_ms=%lu event=OPERATOR_REJECTED_INVALID raw_hex=%s",bootID,(unsigned long)millis(),hex);
+}
 void setup() {
   Serial.begin(115200);
 #if !ARDUINO_USB_CDC_ON_BOOT || !ARDUINO_USB_MODE
@@ -46,6 +58,8 @@ void loop() {
     if(millis()-lastHealth>=5000) { lastHealth=millis(); Serial.println("node_id=shrimp-node02 event=WRONG_BOARD sensors=DISABLED"); }
     delay(100); return;
   }
+  char command[128];
+  while(telemetry.nextCommand(command,sizeof(command))) route(command);
   ec.service();ph.service();
   uint32_t now=millis(),ticks=(now-lastCycle)/POLL_MS;
   if(ticks) {
@@ -65,8 +79,9 @@ void loop() {
   if(status!=WL_CONNECTED && now-lastRetry>=30000) {lastRetry=now;WiFi.reconnect();}
   if(now-lastHealth>=10000) {
     lastHealth=now;
-    benchLog.print("node_id=shrimp-node02 boot_id=%s event=HEALTH uptime_ms=%lu EC_ready=%d pH_ready=%d UTC=UNSYNCED mqtt_lost=%lu usb_lost=%lu format_lost=%lu line_too_long=%lu queued=%u",
-      bootID,(unsigned long)now,ec.ready,ph.ready,(unsigned long)telemetry.mqttLost,(unsigned long)telemetry.usbLost,
+    benchLog.print("node_id=shrimp-node02 boot_id=%s event=HEALTH uptime_ms=%lu EC_ready=%d pH_ready=%d operator_commands=%lu command_lost=%lu UTC=UNSYNCED mqtt_lost=%lu usb_lost=%lu format_lost=%lu line_too_long=%lu queued=%u",
+      bootID,(unsigned long)now,ec.ready,ph.ready,(unsigned long)(ec.operatorCommands+ph.operatorCommands),(unsigned long)telemetry.commandLost,
+      (unsigned long)telemetry.mqttLost,(unsigned long)telemetry.usbLost,
       (unsigned long)telemetry.formatLost,(unsigned long)benchLog.lost,telemetry.queued());
   }
   benchLog.service();

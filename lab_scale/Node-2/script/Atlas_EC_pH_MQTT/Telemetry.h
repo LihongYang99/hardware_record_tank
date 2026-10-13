@@ -8,6 +8,8 @@
 #include <freertos/task.h>
 
 // Copied from Node-1 DO_ORP_MQTT (field-tested 2026-09-26); node name/firmware tag are macros.
+// pump-node-1 addition: with TELEMETRY_COMMAND_TOPIC defined, inbound commands on that topic are queued
+// for the acquisition loop. Without it this file behaves exactly like the Node-2 copy.
 #ifndef TELEMETRY_NODE
 #error Define TELEMETRY_NODE and TELEMETRY_FIRMWARE before including Telemetry.h
 #endif
@@ -26,6 +28,10 @@ class Telemetry : public Print {
   MQTTClient mqtt{256,1536};
   char expectedAck[48]={};
   bool acked=false;
+#ifdef TELEMETRY_COMMAND_TOPIC
+  struct Command { char text[128]; };
+  QueueHandle_t commands=nullptr;
+#endif
   static void task(void* arg) { static_cast<Telemetry*>(arg)->worker(); }
   void worker() {
     mqtt.begin(MQTT_HOST, MQTT_PORT, socket);
@@ -33,6 +39,14 @@ class Telemetry : public Print {
     mqtt.setWill("shrimp/lab/" TELEMETRY_NODE "/status", "offline", true, 1);
     mqtt.onMessage([this](String &topic, String &payload) {
       if(topic=="shrimp/lab/" TELEMETRY_NODE "/ack" && payload==expectedAck) acked=true;
+#ifdef TELEMETRY_COMMAND_TOPIC
+      else if(topic==TELEMETRY_COMMAND_TOPIC) {
+        Command c={};
+        if(payload.length()>=sizeof(c.text)) { ++commandLost; return; }
+        strcpy(c.text,payload.c_str());
+        if(xQueueSend(commands,&c,0)!=pdTRUE) ++commandLost;
+      }
+#endif
     });
     uint32_t lastConnect=millis()-5000, lastSend=millis()-5000, inflight=0;
     Record current={};
@@ -45,6 +59,10 @@ class Telemetry : public Print {
         lastConnect=now;
         if(!mqtt.connect(TELEMETRY_NODE,MQTT_USER,MQTT_PASSWORD)) continue;
         if(!mqtt.subscribe("shrimp/lab/" TELEMETRY_NODE "/ack",1)) { mqtt.disconnect(); continue; }
+#ifdef TELEMETRY_COMMAND_TOPIC
+        // Clean session: commands sent while this node is offline are dropped, never executed late.
+        if(!mqtt.subscribe(TELEMETRY_COMMAND_TOPIC,1)) { mqtt.disconnect(); continue; }
+#endif
         mqtt.publish("shrimp/lab/" TELEMETRY_NODE "/status","online",true,1);
         lastSend=millis()-5000;
       }
@@ -71,12 +89,16 @@ class Telemetry : public Print {
     }
   }
 public:
-  uint32_t mqttLost=0, usbLost=0, formatLost=0;
+  uint32_t mqttLost=0, usbLost=0, formatLost=0, commandLost=0;
   bool begin(const char* id) {
     strncpy(boot,id,sizeof(boot)-1);
     pending=xQueueCreate(64,sizeof(Record));
     usb=xQueueCreate(8,sizeof(Record));
     if(!pending || !usb) return false;
+#ifdef TELEMETRY_COMMAND_TOPIC
+    commands=xQueueCreate(4,sizeof(Command));
+    if(!commands) return false;
+#endif
     return xTaskCreate(task,"mqttSender",8192,this,1,nullptr)==pdPASS;
   }
   using Print::write;
@@ -97,6 +119,13 @@ public:
     used=0; return 1;
   }
   unsigned queued() const { return pending?uxQueueMessagesWaiting(pending):0; }
+#ifdef TELEMETRY_COMMAND_TOPIC
+  bool nextCommand(char* out, size_t n) {
+    Command c;
+    if(!commands || xQueueReceive(commands,&c,0)!=pdTRUE) return false;
+    strncpy(out,c.text,n-1); out[n-1]=0; return true;
+  }
+#endif
   void serviceUSB() {
     // Hardware CDC is required. No blocking writes when the host is absent/full.
     if(!Serial || !usb) return;
